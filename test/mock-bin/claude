@@ -28,6 +28,11 @@ import fs from "node:fs";
 import process from "node:process";
 
 const argv = process.argv.slice(2);
+if (process.env.MOCK_CAPTURE) {
+  fs.appendFileSync(process.env.MOCK_CAPTURE, JSON.stringify({ argv, cwd: process.cwd(),
+    model: process.env.ANTHROPIC_MODEL, key: process.env.ANTHROPIC_API_KEY || process.env.PIGEON_API_KEY,
+    baseUrl: process.env.ANTHROPIC_BASE_URL }) + "\n");
+}
 
 function has(flag) {
   return argv.includes(flag);

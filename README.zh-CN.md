@@ -177,7 +177,16 @@ Native providers available (no key needed): claude-native — add a model on one
 ```
 ```text
 …(你可以继续干别的;模型跑完时 Claude 把结果带回来)
+Pigeon session: run-<uuid>
 ```
+
+完成后在同一底层线程续接:
+
+```text
+/pigeon:run --session run-<uuid> -- 再给这个方案补测试
+```
+
+每一轮都通过 Claude Bash `run_in_background: true` 托管,完成后自动通知结果与同一个 pigeon session ID,无需 work job、continue 命令或轮询。首轮成功后将元数据保存在 `~/.pigeon/run-sessions/`(或 `$PIGEON_HOME/run-sessions/`),不保存凭据。续接继承原 model ID、client、effort、工作目录和 provider 身份,模型别名的配置变化不会改变历史线程。原 provider 的 endpoint 和 key 使用当前配置,支持凭据轮换;原生 session 继承 client 认证。同 session 并发续接会被拒绝。失败轮次保留最后成功的元数据,但 client 可能已写入部分线程历史。续接还要求 client 本地线程历史仍然可用。
 
 ### `/pigeon:work` —— 委派成可管理的后台 job
 
@@ -246,7 +255,8 @@ Native providers available (no key needed): claude-native — add a model on one
 |---|---|---|
 | 机制 | 骑 Claude Code 原生后台任务 | pigeon 自管 detach job |
 | 非阻塞 + 自动通知 | ✅ 原生 | ❌(轮询 status / 取 result) |
-| cancel / continue / 跨 session | — | ✅ |
+| 同线程续接 | `run --session <id>`,每轮自动通知 | `continue <job-id>` |
+| 自管 status / result / cancel | — | ✅ |
 | 适合 | 一件事,"跑完叫我" | 扇出、生命周期管理 |
 
 ---
@@ -260,7 +270,7 @@ Native providers available (no key needed): claude-native — add a model on one
 
 委派运行与你本机配置**隔离**(已配置模型:`claude --bare`;原生 provider 模型:`claude --setting-sources "" --strict-mcp-config`,既保登录又跳过 settings/hooks/CLAUDE.md;`codex --ignore-user-config --ignore-rules` 两者通用),并默认 bypass 权限,让 headless 任务能在其工作目录内读写文件。job 在 per-thread **FIFO** 锁下执行(同线程的 continue 按顺序跑),并以可验证的进程身份追踪(被复用的 PID 绝不会误杀无关进程)。
 
-> 委派出去的子进程**看不到**你的主对话 —— 它只看到你传进去的任务正文(以及 `/pigeon:continue` 时它自己的历史线程)。任务需要的上下文请写进任务里,或让它读工作目录下的文件。
+> 委派出去的子进程**看不到**你的主对话 —— 它只看到你传进去的任务正文(以及 `run --session` 或 `/pigeon:continue` 时它自己的历史线程)。任务需要的上下文请写进任务里,或让它读工作目录下的文件。
 
 ---
 

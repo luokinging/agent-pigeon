@@ -177,7 +177,16 @@ Best for "delegate one thing and get the result back." pigeon runs the model and
 ```
 ```text
 … (you can keep working; when the model finishes, Claude delivers the result)
+Pigeon session: run-<uuid>
 ```
+
+Resume the same underlying thread after completion:
+
+```text
+/pigeon:run --session run-<uuid> -- now add tests for that solution
+```
+
+Every turn uses Claude Bash `run_in_background: true` and automatically notifies you with the result and the same pigeon session ID; no work job, continue command or polling is needed. The first successful turn saves metadata in `~/.pigeon/run-sessions/` (or `$PIGEON_HOME/run-sessions/`), without credentials. Follow-ups inherit the original model ID, client, effort, working directory and provider identity even if the model alias changes. The original provider's current endpoint and key are used, allowing credential rotation; native sessions inherit client authentication. Concurrent turns on one session are rejected. Failed turns preserve the last successful metadata, though the client may have written partial thread history. Resuming also requires the client's local thread history to remain available.
 
 ### `/pigeon:work` — delegate as a managed background job
 
@@ -246,7 +255,8 @@ Once installed, you can just say what you want using the **`pigeon`** anchor —
 |---|---|---|
 | Mechanism | rides Claude Code's own background task | pigeon-managed detached job |
 | Non-blocking + auto-notify | ✅ native | ❌ (poll status / fetch result) |
-| Cancel / continue / cross-session | — | ✅ |
+| Follow up on the same thread | `run --session <id>`; auto-notify each turn | `continue <job-id>` |
+| Managed status / result / cancel | — | ✅ |
 | Best for | one task, "tell me when done" | fan-out, lifecycle management |
 
 ---
@@ -260,7 +270,7 @@ Two layers:
 
 Delegated runs are **isolated** from your local config (configured models: `claude --bare`; native-provider models: `claude --setting-sources "" --strict-mcp-config`, which keeps the login while skipping settings/hooks/CLAUDE.md; `codex --ignore-user-config --ignore-rules` for both) and run with bypass-permission so a headless job can read/write files in its working directory. Jobs run under a per-thread **FIFO** lock (same-thread continuations execute in order) and are tracked with a verifiable process identity (a recycled PID can never kill an unrelated process).
 
-> The delegated subprocess does **not** see your main conversation — it only sees the task text you pass (and, for `/pigeon:continue`, its own prior thread). Put the context the task needs into the task itself, or point it at files in the working directory.
+> The delegated subprocess does **not** see your main conversation — it only sees the task text you pass (and, for `run --session` or `/pigeon:continue`, its own prior thread). Put the context the task needs into the task itself, or point it at files in the working directory.
 
 ---
 

@@ -34,6 +34,7 @@ import {
   threadKey
 } from "./lib/jobs.mjs";
 import { acquireLock, threadLockName } from "./lib/lock.mjs";
+import { readRunSession, saveRunSession } from "./lib/run-sessions.mjs";
 import {
   binaryAvailable,
   procToken,
@@ -76,7 +77,7 @@ function resolveContext(opts) {
   return { ...ctx, timeoutMs: optInTimeout(ctx.timeoutMs) };
 }
 
-// For /pigeon:continue only: rebuild context from the job's persisted original backend identity.
+// Rebuild context for managed-job continue and run session resume from the original identity.
 function resolveContinueContext(base) {
   const config = loadConfig();
   const ctx = resolveForContinue(config, base);
@@ -233,27 +234,44 @@ function cmdWork(argv) {
   process.stdout.write(`${renderWorkAccepted(readJob(id))}\n`);
 }
 
-// ——— run: foreground/synchronous mode — no detach, no job file; runs the client inline, blocks until a result, prints it to stdout.
-// The main agent can wrap this in Claude's run_in_background for "non-blocking + notify on completion", with no job file/polling. ———
+// run remains synchronous so Claude Bash run_in_background owns completion notifications.
+// Persist only successful sessions; hold the lock for the entire client turn.
 async function cmdRun(argv) {
-  let parsed;
+  let release;
   try {
-    parsed = parseFormC(argv);
-    assertKnownFlags(parsed.flags, KNOWN_WORK_FLAGS);
+    await executeRun(argv, (unlock) => { release = unlock; });
   } catch (error) {
-    fail(error.message);
+    process.stderr.write(`pigeon: ${error.message}\n`);
+    process.exitCode = 1;
+  } finally {
+    release?.();
   }
+}
+
+async function executeRun(argv, setRelease) {
+  const parsed = parseFormC(argv);
+  assertKnownFlags(parsed.flags, new Set([...KNOWN_WORK_FLAGS, "session"]));
   const { flags } = parsed;
   const task = flags.stdin ? readStdinTask() : parsed.task;
 
-  let ctx;
-  try {
-    ctx = resolveContext({ model: flags.model, client: flags.client, effort: flags.effort });
-  } catch (error) {
-    fail(error.message);
+  if (flags.session && ["model", "client", "effort"].some((key) => flags[key])) {
+    throw new Error("--session inherits model/client/effort; do not supply overrides");
   }
+  const id = flags.session || `run-${randomUUID()}`;
+  // Validate before using the user-supplied id as a lock name.
+  if (flags.session) readRunSession(id);
+  const release = acquireLock(`run-session-${id}`, { timeoutMs: 0 });
+  setRelease(release);
+  const base = flags.session ? readRunSession(id) : null;
+  const ctx = base
+    ? resolveContinueContext(base)
+    : resolveContext({ model: flags.model, client: flags.client, effort: flags.effort });
+  if (base && ctx.native !== base.native) {
+    throw new Error("original run session backend authentication identity changed; cannot resume");
+  }
+  const sessionId = base?.session_id ?? (ctx.adapter.sessionIdStable ? randomUUID() : null);
   if (!task || !task.trim()) {
-    fail("task body is empty (provide the work to delegate after -- or via --stdin)");
+    throw new Error("task body is empty (provide the work to delegate after -- or via --stdin)");
   }
 
   const client = ctx.adapter;
@@ -267,11 +285,11 @@ async function cmdRun(argv) {
       effort: ctx.effort,
       wireApi: ctx.wireApi ?? null,
       native: ctx.native ?? false,
-      sessionId: randomUUID(),
-      resume: false
+      sessionId,
+      resume: Boolean(base)
     });
   } catch (error) {
-    fail(`failed to build invocation: ${error.message}`);
+    throw new Error(`failed to build invocation: ${error.message}`);
   }
 
   for (const f of invocation.files ?? []) {
@@ -287,7 +305,7 @@ async function cmdRun(argv) {
 
   // The client forms its own process group, so its whole tree can be cleaned up on timeout/kill. We (pigeon) stay foreground and await; no detach.
   const child = spawn(invocation.command, invocation.argv, {
-    cwd: process.cwd(),
+    cwd: ctx.cwd,
     env: childEnv,
     detached: true,
     stdio: ["ignore", "pipe", "pipe"]
@@ -295,6 +313,7 @@ async function cmdRun(argv) {
   // When Claude (background task) or the user terminates pigeon, also kill the client subtree so no orphans are left.
   const onTerm = () => {
     terminateProcessTree(child.pid, { signal: "SIGKILL" });
+    release();
     process.exit(130);
   };
   process.on("SIGTERM", onTerm);
@@ -325,12 +344,14 @@ async function cmdRun(argv) {
     child.on("error", (err) => resolve({ spawnError: err }));
   });
   if (timer) clearTimeout(timer);
+  process.off("SIGTERM", onTerm);
+  process.off("SIGINT", onTerm);
 
   if (timedOut) {
-    fail(`wall-clock timeout (>${Math.round(ctx.timeoutMs / 1000)}s), terminated`);
+    throw new Error(`wall-clock timeout (>${Math.round(ctx.timeoutMs / 1000)}s), terminated`);
   }
   if (exit.spawnError) {
-    fail(mapClientError(exit.spawnError.message, stderr));
+    throw new Error(mapClientError(exit.spawnError.message, stderr));
   }
   if (exit.code === 0) {
     let text = "";
@@ -339,10 +360,25 @@ async function cmdRun(argv) {
     } catch {
       text = stdout;
     }
+    const extracted = client.extractSessionId(stdout, { sessionId });
+    if (!extracted) {
+      process.stdout.write(text.endsWith("\n") ? text : text + "\n");
+      throw new Error("client completed but returned no resumable session id; run session was not saved");
+    }
+    saveRunSession({
+      version: 1, id, session_id: extracted,
+      model: ctx.model, model_id: ctx.modelId ?? null, client: ctx.client,
+      provider: ctx.provider, protocol: ctx.protocol, effort: ctx.effort ?? null,
+      wire_api: ctx.wireApi ?? null, native: ctx.native, cwd: ctx.cwd,
+      timeout_ms: ctx.timeoutMs, turns: (base?.turns ?? 0) + 1,
+      created_at: base?.created_at ?? new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
     process.stdout.write(text.endsWith("\n") ? text : text + "\n");
-    process.exit(0);
+    process.stdout.write(`Pigeon session: ${id}\n`);
+    return;
   }
-  fail(mapClientError(`client exit code ${exit.code}`, stderr));
+  throw new Error(mapClientError(`client exit code ${exit.code}`, stderr));
 }
 
 // ——— continue: reuse (thread_key, session_id) to start a new background job, serialized within the same thread ———

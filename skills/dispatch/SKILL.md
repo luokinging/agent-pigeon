@@ -32,7 +32,9 @@ PIGEON_TASK_EOF
 
 For several tasks (e.g. "多开几个并行", comparing models), fire one such call per task, so the user gets N independent shells. If they want the outputs compared or written up, aggregate the N results once each has notified — that's a report, not a reason to run them as one command. Combine into a single command only if the user explicitly asks to. Omit `--client` / `--effort` to use the model's defaults.
 
-Use `work` (a pigeon-managed detached job) only when the user needs to cancel or continue a job, have it survive across sessions, or run a batch too large for that many live shells — forward to the `pigeon:pigeon-runner` subagent. Even then, wait via `run_in_background`, not a foreground poll loop.
+Relay each completed run's result and `Pigeon session: run-...` ID. To follow up on that same client thread, use `run --session <id> --stdin` with the follow-up body in a quoted heredoc, again in a Bash call with `run_in_background: true` for **every turn**. Do not add model/client/effort overrides, query current model aliases, poll, or switch to work/continue for a run session. The saved session inherits its original model/client/effort/cwd/backend identity; credentials and endpoint come from the original provider's current config. Concurrent turns on one session are rejected; wait for its completion notification before retrying. Treat nonzero exits as failures and preserve the stable pigeon ID across successful turns.
+
+Use `work` (a pigeon-managed detached job) when the user needs managed status/result/cancel, managed-job continue, or a batch too large for that many live shells — forward to the `pigeon:pigeon-runner` subagent. Even then, wait via `run_in_background`, not a foreground poll loop.
 
 ### 2) Query capabilities
 

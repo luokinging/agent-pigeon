@@ -12,6 +12,11 @@ import fs from "node:fs";
 import process from "node:process";
 
 const argv = process.argv.slice(2);
+if (process.env.MOCK_CAPTURE) {
+  fs.appendFileSync(process.env.MOCK_CAPTURE, JSON.stringify({ argv, cwd: process.cwd(),
+    model: process.env.ANTHROPIC_MODEL, key: process.env.ANTHROPIC_API_KEY || process.env.PIGEON_API_KEY,
+    baseUrl: process.env.ANTHROPIC_BASE_URL }) + "\n");
+}
 
 if (argv.includes("--help") || argv.includes("-h") || argv.length === 0) {
   process.stdout.write(
@@ -36,8 +41,13 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 
-// session id (resume) is the arg right after "resume".
-const sessionId = isResume ? argv[2] : "codex-mock-session";
+// Options precede the resume id in the real CLI.
+const positionals = [];
+for (let i = isResume ? 2 : 1; i < argv.length; i++) {
+  if (["-m", "--model", "-c", "--config"].includes(argv[i])) { i++; continue; }
+  if (!argv[i].startsWith("-")) positionals.push(argv[i]);
+}
+const sessionId = isResume ? positionals[0] : "codex-mock-session";
 
 // Task prompt = last non-flag arg.
 let task = "";
@@ -66,7 +76,7 @@ if (process.env.MOCK_TOUCH) {
 function emitOkAndExit() {
   // codex --json JSONL events. Real codex carries the resumable id as `thread_id` on a
   // `thread.started` event (NOT session_id) — mirror that so the adapter's extractSessionId is tested truthfully.
-  process.stdout.write(
+  if (!process.env.MOCK_NO_SESSION) process.stdout.write(
     JSON.stringify({ type: "thread.started", thread_id: sessionId }) + "\n"
   );
   process.stdout.write(
