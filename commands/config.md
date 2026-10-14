@@ -33,20 +33,22 @@ Turn the answer into the config-set patch shape (it mirrors `~/.pigeon/config.js
 
 **Native providers — run a client keyless, no api key.** Besides configured (key + endpoint) providers, pigeon auto-provides two **native providers** that need no config: `codex-native` (openai) and `claude-native` (anthropic). A model on a native provider injects no auth — the client uses whatever it already has on this machine (its own session, or a global env). They appear automatically when the client binary is installed.
 
-Use this when the user wants to run a model through `codex` / `claude` **without** giving pigeon a key — e.g. "use my Codex for gpt-5.5 and gpt-5.4". You hang one model per `model_id` on the native provider, and they can run in parallel:
+Model IDs such as `gpt-xxx` and `gpt-yyy` below are placeholders. Never save or probe these literal IDs; obtain actual supported model IDs from the user or the client before configuring them.
+
+Use this when the user wants to run a model through `codex` / `claude` **without** giving pigeon a key — e.g. "use my Codex for gpt-xxx and gpt-yyy". You hang one model per `model_id` on the native provider, and they can run in parallel:
 
 ```jsonc
 {
   "models": {
-    "gpt-5.5": { "provider": "codex-native", "model_id": "gpt-5.5", "clients": ["codex"] },
-    "gpt-5.4": { "provider": "codex-native", "model_id": "gpt-5.4", "clients": ["codex"] }
+    "gpt-xxx": { "provider": "codex-native", "model_id": "gpt-xxx", "clients": ["codex"] },
+    "gpt-yyy": { "provider": "codex-native", "model_id": "gpt-yyy", "clients": ["codex"] }
   }
 }
 ```
 
 Note: a native-provider model carries **no `api_key`, no `base_url`** — you only write the model (the provider is built-in). Before saving, sanity-check the CLI and a model id:
 - `codex --version` (if missing, tell the user to install the `codex` CLI and stop).
-- Confirm the `model_id` runs: `codex exec -m <id> 'say OK'`. (A ChatGPT-account login accepts only the models that account is entitled to — e.g. `gpt-5.5` / `gpt-5.4` — and rejects others with HTTP 400; pick one that works.)
+- Confirm the `model_id` runs: `codex exec -m <id> 'say OK'`. (A ChatGPT-account login accepts only the models that account is entitled to and rejects unsupported IDs; pick one that works.)
 - Do not add a native provider to `providers` — it is auto-present; just reference it from the model.
 
 Echo back a readable summary of exactly what will be written and get an explicit yes before writing. If the patch would overwrite a value that already exists, call that out and confirm the overwrite first — to see what's already there, run `pigeon.mjs list`. Then persist:

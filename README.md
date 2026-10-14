@@ -11,7 +11,7 @@
 ## Highlights
 
 - **Any provider, one workflow** — drive any Anthropic-compatible model through the `claude` CLI, any OpenAI-compatible model through `codex`. Configure once, use them all the same way.
-- **Native providers, no key** — run a model through `codex` / `claude` using the auth the client already has on your machine (its own session, or a global env). Hang several models on one native provider (e.g. gpt-5.5 + gpt-5.4) and run them in parallel. See [Native providers](#native-providers-run-a-client-keyless).
+- **Native providers, no key** — run a model through `codex` / `claude` using the auth the client already has on your machine (its own session, or a global env). Hang several models on one native provider (e.g. gpt-xxx + gpt-yyy) and run them in parallel. See [Native providers](#native-providers-run-a-client-keyless).
 - **Two background modes** — ride Claude Code's own background (`/pigeon:run`, get auto-notified) or pigeon-managed jobs (`/pigeon:work`, fan out & manage).
 - **Parallel fan-out** — fire many tasks at once; track them with status / result / cancel / continue.
 - **Natural-language trigger** — say "pigeon …" and it routes for you; no slash required.
@@ -35,18 +35,20 @@ To update to the latest version later:
 
 ```bash
 claude plugin marketplace update pigeon-cc   # refresh the marketplace cache first
-claude plugin update pigeon@pigeon-cc          # then pull the newest plugin version
+claude plugin update pigeon@pigeon-cc       # then pull the newest plugin version
 ```
 
 Restart Claude Code to apply the update.
 
 ## Quick start
 
+Model IDs such as `gpt-xxx`, `gpt-yyy`, `glm-xxx`, `GLM-xxx`, `deepseek-xxx`, and `claude-xxx` below are placeholders, not runnable model names. Replace them with IDs supported by your provider and accessible to your account; configure the matching aliases with `/pigeon:config` before running the examples. Effort support and context limits depend on the actual model and endpoint.
+
 ```text
 /pigeon:config                  # conversational: add models — configured (with a key) or native (keyless)
 /pigeon:list                    # see your models
-/pigeon:run --model gpt-5.5 -- summarize ./src architecture in 5 bullets   # native (your Codex), keyless
-/pigeon:run --model glm-4.6 -- summarize ./src architecture in 5 bullets   # configured provider; notified when done
+/pigeon:run --model gpt-xxx -- summarize ./src architecture in 5 bullets   # native (your Codex), keyless
+/pigeon:run --model glm-xxx -- summarize ./src architecture in 5 bullets   # configured provider; notified when done
 ```
 
 ---
@@ -62,17 +64,17 @@ Two native providers are built in and auto-present (they're never written to con
 | `codex-native`  | openai    | `codex`  |
 | `claude-native` | anthropic | `claude` |
 
-You don't configure the provider — you just hang **models** on it, each pinning its own `model_id`. Several models can share one native provider and run in parallel. For example, "use my Codex for gpt-5.5 and gpt-5.4":
+You don't configure the provider — you just hang **models** on it, each pinning its own `model_id`. Several models can share one native provider and run in parallel. For example, "use my Codex for gpt-xxx and gpt-yyy":
 
 ```jsonc
 "models": {
-  "gpt-5.5": { "provider": "codex-native", "model_id": "gpt-5.5", "clients": ["codex"] },
-  "gpt-5.4": { "provider": "codex-native", "model_id": "gpt-5.4", "clients": ["codex"] }
+  "gpt-xxx": { "provider": "codex-native", "model_id": "gpt-xxx", "clients": ["codex"] },
+  "gpt-yyy": { "provider": "codex-native", "model_id": "gpt-yyy", "clients": ["codex"] }
 }
 ```
 ```text
-/pigeon:run --model gpt-5.5 -- ...      # both run keyless via your Codex login,
-/pigeon:run --model gpt-5.4 -- ...      # in parallel, each its own model
+/pigeon:run --model gpt-xxx -- ...      # both run keyless via your Codex login,
+/pigeon:run --model gpt-yyy -- ...      # in parallel, each its own model
 ```
 
 - No key: if you can use `codex` / `claude` yourself, a model on its native provider just works.
@@ -102,7 +104,7 @@ You:   add a provider
 pigeon:  Which provider, its protocol(s), base URL, and API key?
 You:   call it zhipu, anthropic protocol, https://open.bigmodel.cn/api/anthropic, key sk-…
 pigeon:  And a model on it? (provider · the model_id sent to the client · which clients can drive it)
-You:   model glm-5.2, model_id GLM-5.2, client claude
+You:   model glm-xxx, model_id GLM-xxx, client claude
 pigeon:  Here's what I'll save: <echoes the structured config>. Confirm?
 You:   yes
 ```
@@ -119,14 +121,14 @@ It writes `~/.pigeon/config.json` (plaintext keys — on your machine, never in 
     "deepseek": { "protocols": ["anthropic"], "base_url": { "anthropic": "https://api.deepseek.com/anthropic" },     "api_key": "<key>" }
   },
   "models": {
-    "glm-5.2":  { "provider": "zhipu",    "model_id": "GLM-5.2",         "clients": ["claude"], "effort": ["high", "medium", "low"] },
-    "deepseek": { "provider": "deepseek", "model_id": "deepseek-v4-pro", "clients": ["claude"] }
+    "glm-xxx":  { "provider": "zhipu",    "model_id": "GLM-xxx",         "clients": ["claude"], "effort": ["high", "medium", "low"] },
+    "deepseek": { "provider": "deepseek", "model_id": "deepseek-xxx", "clients": ["claude"] }
   }
 }
 ```
 
 - `clients` and `effort` are **ordered** — the first entry is the default.
-- `effort` is **optional**. Only include it for models that actually support effort/thinking levels (e.g. `GLM-5.2`); most third-party models have none — just omit it. See [Clients & protocols](#clients--protocols).
+- `effort` is **optional**. Only include it for models that actually support effort/thinking levels; most third-party models have none — just omit it. See [Clients & protocols](#clients--protocols).
 - A model's `clients` must be drivable by its provider's protocols (`claude` speaks `anthropic`, `codex` speaks `openai`).
 
 ---
@@ -140,16 +142,16 @@ It writes `~/.pigeon/config.json` (plaintext keys — on your machine, never in 
 ```
 ```text
 Configured models
-MODEL_ID             MODEL     PROVIDER  PROTOCOL   CLIENTS  EFFORT
--------------------  --------  --------  ---------  -------  ----------------
-GLM-5.2[1m]          glm-5.2   zhipu     anthropic  claude*  high*,medium,low
-deepseek-v4-pro[1m]  deepseek  deepseek  anthropic  claude*
+MODEL_ID      MODEL     PROVIDER  PROTOCOL   CLIENTS  EFFORT
+------------  --------  --------  ---------  -------  ----------------
+GLM-xxx       glm-xxx   zhipu     anthropic  claude*  high*,medium,low
+deepseek-xxx  deepseek  deepseek  anthropic  claude*
 
 Native models (keyless — your own codex / claude)
-MODEL_ID         MODEL    PROVIDER       PROTOCOL   CLIENTS  EFFORT
----------------  -------  -------------  ---------  -------  ------
-gpt-5.5          gpt-5.5  codex-native   openai     codex*
-claude-opus-4-8  opus     claude-native  anthropic  claude*
+MODEL_ID    MODEL    PROVIDER       PROTOCOL   CLIENTS  EFFORT
+----------  -------  -------------  ---------  -------  ------
+gpt-xxx     gpt-xxx  codex-native   openai     codex*
+claude-xxx  opus     claude-native  anthropic  claude*
 
 * = default
 ```
@@ -171,7 +173,7 @@ Hang a model on it and it joins the Native models table; the hint drops it. When
 Best for "delegate one thing and get the result back." pigeon runs the model and Claude Code re-notifies you with its output when it finishes — the conversation is **never blocked**, and there's nothing to poll.
 
 ```text
-/pigeon:run --model glm-5.2 -- write a regex that matches RFC-5322 email addresses, with a short explanation
+/pigeon:run --model glm-xxx -- write a regex that matches RFC-5322 email addresses, with a short explanation
 ```
 ```text
 … (you can keep working; when the model finishes, Claude delivers the result)
@@ -182,26 +184,26 @@ Best for "delegate one thing and get the result back." pigeon runs the model and
 Best when you fan out many at once, or need `cancel` / `continue`, or want jobs to survive across sessions. Returns a `job-id` immediately; you fetch the result later.
 
 ```text
-/pigeon:work --model glm-5.2 -- refactor src/auth.ts: make login() async/await, keep behavior
+/pigeon:work --model glm-xxx -- refactor src/auth.ts: make login() async/await, keep behavior
 ```
 ```text
-✓ Dispatched job glm-5.2-a1b2 in the background (glm-5.2/claude/high).
-  Check progress: /pigeon:status glm-5.2-a1b2
-  Fetch result:   /pigeon:result glm-5.2-a1b2
+✓ Dispatched job glm-xxx-a1b2 in the background (glm-xxx/claude/high).
+  Check progress: /pigeon:status glm-xxx-a1b2
+  Fetch result:   /pigeon:result glm-xxx-a1b2
 ```
 
 ### `/pigeon:status` — check progress
 
 ```text
 /pigeon:status               # all jobs
-/pigeon:status glm-5.2-a1b2  # one job
+/pigeon:status glm-xxx-a1b2  # one job
 ```
 States: `queued · running · done · failed · timeout · killed · crashed` (a stalled job is flagged as suspected-stuck).
 
 ### `/pigeon:result` — fetch the output
 
 ```text
-/pigeon:result glm-5.2-a1b2
+/pigeon:result glm-xxx-a1b2
 ```
 
 ### `/pigeon:continue` — follow up on the same thread
@@ -209,13 +211,13 @@ States: `queued · running · done · failed · timeout · killed · crashed` (a
 Resumes the job's thread with a new instruction (runs after it, in submission order).
 
 ```text
-/pigeon:continue glm-5.2-a1b2 -- now add a unit test for the error path
+/pigeon:continue glm-xxx-a1b2 -- now add a unit test for the error path
 ```
 
 ### `/pigeon:cancel` — stop a job
 
 ```text
-/pigeon:cancel glm-5.2-a1b2
+/pigeon:cancel glm-xxx-a1b2
 ```
 
 ### Fan out in parallel
@@ -223,9 +225,9 @@ Resumes the job's thread with a new instruction (runs after it, in submission or
 Each `/pigeon:work` is an independent job — dispatch several, then collect:
 
 ```text
-/pigeon:work --model glm-5.2  -- generate the data model
+/pigeon:work --model glm-xxx  -- generate the data model
 /pigeon:work --model deepseek -- write the API handlers
-/pigeon:work --model glm-5.2  -- write the tests
+/pigeon:work --model glm-xxx  -- write the tests
 /pigeon:status                # watch them all
 /pigeon:result <job-id>       # collect each as it finishes
 ```
@@ -269,7 +271,7 @@ Delegated runs are **isolated** from your local config (configured models: `clau
 | `claude` | anthropic | Claude, plus any Anthropic-compatible endpoint (GLM, DeepSeek, Kimi, MiniMax, Qwen, …) |
 | `codex` | openai | OpenAI, plus any OpenAI-compatible endpoint |
 
-**About effort.** Each client CLI *accepts* a fixed set of effort/thinking levels — `claude`: `low / medium / high / xhigh / max`; `codex`: `none / minimal / low / medium / high / xhigh`. But effort is only meaningfully honored by the client's **own** models (Anthropic's for `claude`, OpenAI's for `codex`). **Most third-party Anthropic/OpenAI-compatible models — GLM, DeepSeek, Kimi, MiniMax, Qwen, … — expose no effort/thinking control at all.** A few do (e.g. `GLM-5.2`, under its own model id and its own levels). So set a model's `effort` list to what *that specific model* actually supports — often just omit it. pigeon only accepts an effort that is in the model's configured list **and** legal for the chosen client.
+**About effort.** Each client CLI *accepts* a fixed set of effort/thinking levels — `claude`: `low / medium / high / xhigh / max`; `codex`: `none / minimal / low / medium / high / xhigh`. But effort is only meaningfully honored by the client's **own** models (Anthropic's for `claude`, OpenAI's for `codex`). **Most third-party Anthropic/OpenAI-compatible models — GLM, DeepSeek, Kimi, MiniMax, Qwen, … — expose no effort/thinking control at all.** Some providers expose their own controls; check the documentation for the specific model and endpoint. So set a model's `effort` list to what *that specific model* actually supports — often just omit it. pigeon only accepts an effort that is in the model's configured list **and** legal for the chosen client.
 
 Adding a client = adding one adapter file; the registry/runtime don't change.
 

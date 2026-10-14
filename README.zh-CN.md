@@ -11,7 +11,7 @@
 ## 亮点
 
 - **多厂商一套流程** —— 任何 Anthropic 兼容模型用 `claude` CLI 驱动,任何 OpenAI 兼容模型用 `codex`。配一次,统一用。
-- **原生 provider,无需 key** —— 用 client 在你机器上已有的认证(它自己的会话,或全局 env)跑模型;多个模型挂在一个原生 provider 上(比如 gpt-5.5 + gpt-5.4)可并行。见 [原生 provider](#原生-providerno-key-跑-client)。
+- **原生 provider,无需 key** —— 用 client 在你机器上已有的认证(它自己的会话,或全局 env)跑模型;多个模型挂在一个原生 provider 上(比如 gpt-xxx + gpt-yyy)可并行。见 [原生 provider](#原生-providerno-key-跑-client)。
 - **两种后台模式** —— 骑 Claude Code 原生后台(`/pigeon:run`,跑完自动通知)或 pigeon 自管 job(`/pigeon:work`,扇出与管理)。
 - **并行扇出** —— 一次性派发多个任务,用 status / result / cancel / continue 管理。
 - **自然语言触发** —— 说"pigeon …"它就帮你路由,不必打斜杠。
@@ -35,18 +35,20 @@ claude plugin install pigeon@pigeon-cc
 
 ```bash
 claude plugin marketplace update pigeon-cc   # 先刷新 marketplace 缓存
-claude plugin update pigeon@pigeon-cc          # 再拉取最新插件版本
+claude plugin update pigeon@pigeon-cc       # 再拉取最新插件版本
 ```
 
 重启 Claude Code 生效。
 
 ## 快速上手
 
+下文的 `gpt-xxx`、`gpt-yyy`、`glm-xxx`、`GLM-xxx`、`deepseek-xxx` 和 `claude-xxx` 均为占位符,不是可直接运行的模型名。请替换成 provider 支持且你的账号有权使用的模型 ID,并先通过 `/pigeon:config` 配置对应别名。思考档位和上下文长度以实际模型和端点为准。
+
 ```text
 /pigeon:config                  # 对话式:加模型 —— 已配置的(带 key)或原生的(无 key)
 /pigeon:list                    # 看你的模型
-/pigeon:run --model gpt-5.5 -- 用 5 条要点总结 ./src 的架构   # 原生(你的 Codex),无 key
-/pigeon:run --model glm-4.6 -- 用 5 条要点总结 ./src 的架构   # 已配置 provider;跑完通知你
+/pigeon:run --model gpt-xxx -- 用 5 条要点总结 ./src 的架构   # 原生(你的 Codex),无 key
+/pigeon:run --model glm-xxx -- 用 5 条要点总结 ./src 的架构   # 已配置 provider;跑完通知你
 ```
 
 ---
@@ -62,17 +64,17 @@ pigeon 里的 **provider** 是模型的来源:它回答模型从哪来、怎么�
 | `codex-native`  | openai    | `codex`  |
 | `claude-native` | anthropic | `claude` |
 
-provider 你不配 —— 你只把**模型**挂上去,每个 pin 自己的 `model_id`。多个模型可以共用一个原生 provider 并行跑。比如「用我的 Codex 跑 gpt-5.5 和 gpt-5.4」:
+provider 你不配 —— 你只把**模型**挂上去,每个 pin 自己的 `model_id`。多个模型可以共用一个原生 provider 并行跑。比如「用我的 Codex 跑 gpt-xxx 和 gpt-yyy」:
 
 ```jsonc
 "models": {
-  "gpt-5.5": { "provider": "codex-native", "model_id": "gpt-5.5", "clients": ["codex"] },
-  "gpt-5.4": { "provider": "codex-native", "model_id": "gpt-5.4", "clients": ["codex"] }
+  "gpt-xxx": { "provider": "codex-native", "model_id": "gpt-xxx", "clients": ["codex"] },
+  "gpt-yyy": { "provider": "codex-native", "model_id": "gpt-yyy", "clients": ["codex"] }
 }
 ```
 ```text
-/pigeon:run --model gpt-5.5 -- ...      # 两个都走你的 Codex 登录、无 key,
-/pigeon:run --model gpt-5.4 -- ...      # 并行,各跑各的模型
+/pigeon:run --model gpt-xxx -- ...      # 两个都走你的 Codex 登录、无 key,
+/pigeon:run --model gpt-yyy -- ...      # 并行,各跑各的模型
 ```
 
 - 无 key:你自己能用 `codex` / `claude`,挂在其原生 provider 上的模型就能用。
@@ -102,7 +104,7 @@ pigeon:  要配置什么?(某个 provider 的 endpoint + key · 一个模型 · 
 pigeon:  哪个 provider,走什么协议,base URL 和 API key 是?
 你:    叫 zhipu,anthropic 协议,https://open.bigmodel.cn/api/anthropic,key sk-…
 pigeon:  在它上面加个模型吗?(provider · 传给 client 的 model_id · 哪些 client 能驱动)
-你:    模型 glm-5.2,model_id GLM-5.2,client claude
+你:    模型 glm-xxx,model_id GLM-xxx,client claude
 pigeon:  我将保存:<回显结构化配置>,确认?
 你:    确认
 ```
@@ -119,14 +121,14 @@ pigeon:  我将保存:<回显结构化配置>,确认?
     "deepseek": { "protocols": ["anthropic"], "base_url": { "anthropic": "https://api.deepseek.com/anthropic" },     "api_key": "<key>" }
   },
   "models": {
-    "glm-5.2":  { "provider": "zhipu",    "model_id": "GLM-5.2",         "clients": ["claude"], "effort": ["high", "medium", "low"] },
-    "deepseek": { "provider": "deepseek", "model_id": "deepseek-v4-pro", "clients": ["claude"] }
+    "glm-xxx":  { "provider": "zhipu",    "model_id": "GLM-xxx",         "clients": ["claude"], "effort": ["high", "medium", "low"] },
+    "deepseek": { "provider": "deepseek", "model_id": "deepseek-xxx", "clients": ["claude"] }
   }
 }
 ```
 
 - `clients` 和 `effort` 都是**有序**的 —— 第一个是默认。
-- `effort` 是**可选**的。只有真正支持 effort/思考档位的模型(如 `GLM-5.2`)才填;大多数第三方模型没有 effort —— 直接不填。见 [客户端与协议](#客户端与协议)。
+- `effort` 是**可选**的。只有真正支持 effort/思考档位的模型才填;大多数第三方模型没有 effort —— 直接不填。见 [客户端与协议](#客户端与协议)。
 - 一个模型的 `clients` 必须能被其 provider 的协议驱动(`claude` 说 `anthropic`,`codex` 说 `openai`)。
 
 ---
@@ -140,16 +142,16 @@ pigeon:  我将保存:<回显结构化配置>,确认?
 ```
 ```text
 Configured models
-MODEL_ID             MODEL     PROVIDER  PROTOCOL   CLIENTS  EFFORT
--------------------  --------  --------  ---------  -------  ----------------
-GLM-5.2[1m]          glm-5.2   zhipu     anthropic  claude*  high*,medium,low
-deepseek-v4-pro[1m]  deepseek  deepseek  anthropic  claude*
+MODEL_ID      MODEL     PROVIDER  PROTOCOL   CLIENTS  EFFORT
+------------  --------  --------  ---------  -------  ----------------
+GLM-xxx       glm-xxx   zhipu     anthropic  claude*  high*,medium,low
+deepseek-xxx  deepseek  deepseek  anthropic  claude*
 
 Native models (keyless — your own codex / claude)
-MODEL_ID         MODEL    PROVIDER       PROTOCOL   CLIENTS  EFFORT
----------------  -------  -------------  ---------  -------  ------
-gpt-5.5          gpt-5.5  codex-native   openai     codex*
-claude-opus-4-8  opus     claude-native  anthropic  claude*
+MODEL_ID    MODEL    PROVIDER       PROTOCOL   CLIENTS  EFFORT
+----------  -------  -------------  ---------  -------  ------
+gpt-xxx     gpt-xxx  codex-native   openai     codex*
+claude-xxx  opus     claude-native  anthropic  claude*
 
 * = default
 ```
@@ -171,7 +173,7 @@ Native providers available (no key needed): claude-native — add a model on one
 适合"派一件、拿结果回来"。pigeon 跑模型,跑完 Claude Code 用通知把输出送回主 agent —— 对话**全程不阻塞**,也无需轮询。
 
 ```text
-/pigeon:run --model glm-5.2 -- 写一个匹配 RFC-5322 邮箱地址的正则,并简短解释
+/pigeon:run --model glm-xxx -- 写一个匹配 RFC-5322 邮箱地址的正则,并简短解释
 ```
 ```text
 …(你可以继续干别的;模型跑完时 Claude 把结果带回来)
@@ -182,26 +184,26 @@ Native providers available (no key needed): claude-native — add a model on one
 适合一次性扇出很多个、或需要 `cancel` / `continue`、或要跨 session 存活。立刻返回 `job-id`,稍后取结果。
 
 ```text
-/pigeon:work --model glm-5.2 -- 重构 src/auth.ts:把 login() 改成 async/await,行为不变
+/pigeon:work --model glm-xxx -- 重构 src/auth.ts:把 login() 改成 async/await,行为不变
 ```
 ```text
-✓ Dispatched job glm-5.2-a1b2 in the background (glm-5.2/claude/high).
-  Check progress: /pigeon:status glm-5.2-a1b2
-  Fetch result:   /pigeon:result glm-5.2-a1b2
+✓ Dispatched job glm-xxx-a1b2 in the background (glm-xxx/claude/high).
+  Check progress: /pigeon:status glm-xxx-a1b2
+  Fetch result:   /pigeon:result glm-xxx-a1b2
 ```
 
 ### `/pigeon:status` —— 查进度
 
 ```text
 /pigeon:status               # 所有 job
-/pigeon:status glm-5.2-a1b2  # 单个 job
+/pigeon:status glm-xxx-a1b2  # 单个 job
 ```
 状态:`queued · running · done · failed · timeout · killed · crashed`(卡住的会标"疑似卡死")。
 
 ### `/pigeon:result` —— 取输出
 
 ```text
-/pigeon:result glm-5.2-a1b2
+/pigeon:result glm-xxx-a1b2
 ```
 
 ### `/pigeon:continue` —— 在同一线程上追加
@@ -209,13 +211,13 @@ Native providers available (no key needed): claude-native — add a model on one
 复用该 job 的线程,用新指令续接(在其之后、按提交顺序跑)。
 
 ```text
-/pigeon:continue glm-5.2-a1b2 -- 再给错误分支加个单测
+/pigeon:continue glm-xxx-a1b2 -- 再给错误分支加个单测
 ```
 
 ### `/pigeon:cancel` —— 停掉一个 job
 
 ```text
-/pigeon:cancel glm-5.2-a1b2
+/pigeon:cancel glm-xxx-a1b2
 ```
 
 ### 并行扇出
@@ -223,9 +225,9 @@ Native providers available (no key needed): claude-native — add a model on one
 每个 `/pigeon:work` 都是独立 job —— 派多个,再逐个收:
 
 ```text
-/pigeon:work --model glm-5.2  -- 生成数据模型
+/pigeon:work --model glm-xxx  -- 生成数据模型
 /pigeon:work --model deepseek -- 写 API handlers
-/pigeon:work --model glm-5.2  -- 写测试
+/pigeon:work --model glm-xxx  -- 写测试
 /pigeon:status                # 看它们全部
 /pigeon:result <job-id>       # 谁好了取谁
 ```
@@ -269,7 +271,7 @@ Native providers available (no key needed): claude-native — add a model on one
 | `claude` | anthropic | Claude,以及任何 Anthropic 兼容端点(GLM、DeepSeek、Kimi、MiniMax、Qwen…) |
 | `codex` | openai | OpenAI,以及任何 OpenAI 兼容端点 |
 
-**关于 effort。** 每个客户端 CLI *接受*一组固定的 effort/思考档位 —— `claude`:`low / medium / high / xhigh / max`;`codex`:`none / minimal / low / medium / high / xhigh`。但 effort 只有该客户端**自家**的模型才真正生效(`claude` 对 Anthropic 自家模型、`codex` 对 OpenAI 自家模型)。**大多数第三方 Anthropic/OpenAI 兼容模型 —— GLM、DeepSeek、Kimi、MiniMax、Qwen… —— 根本没有 effort/思考控制。** 少数有(例如 `GLM-5.2`,用它自己的 model id 和档位)。所以某模型的 `effort` 列表只填*该模型实际支持的*——往往直接不填。pigeon 只接受既在该模型列表里、又被所选 client 认可的 effort。
+**关于 effort。** 每个客户端 CLI *接受*一组固定的 effort/思考档位 —— `claude`:`low / medium / high / xhigh / max`;`codex`:`none / minimal / low / medium / high / xhigh`。但 effort 只有该客户端**自家**的模型才真正生效(`claude` 对 Anthropic 自家模型、`codex` 对 OpenAI 自家模型)。**大多数第三方 Anthropic/OpenAI 兼容模型 —— GLM、DeepSeek、Kimi、MiniMax、Qwen… —— 根本没有 effort/思考控制。** 部分 provider 提供自己的控制方式,请以具体模型和端点的文档为准。所以某模型的 `effort` 列表只填*该模型实际支持的*——往往直接不填。pigeon 只接受既在该模型列表里、又被所选 client 认可的 effort。
 
 新增一个 client = 加一个适配器文件;registry/运行时不用改。
 
