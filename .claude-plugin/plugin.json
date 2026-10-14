@@ -1,0 +1,9 @@
+{
+  "name": "pigeon",
+  "version": "1.0.16",
+  "description": "Delegate a chunk of work to any vendor / any CLI client's model, run it in the background, and fetch the result back.",
+  "homepage": "https://github.com/luokinging/pigeon-cc",
+  "author": {
+    "name": "luokinging"
+  }
+}

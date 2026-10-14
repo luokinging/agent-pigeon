@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+// Mock `codex` CLI for pigeon tests. Zero deps, Node built-ins only.
+//
+// Recognised forms (subset of real codex exec --help):
+//   codex exec [-m <model>] [-c k=v ...] [--skip-git-repo-check] <task>
+//   codex exec resume <SESSION_ID> [...] <task>
+//   codex --help / codex exec --help   (self-check, exit 0)
+//
+// Same MOCK_* behaviour-injection env vars as the mock claude.
+
+import fs from "node:fs";
+import process from "node:process";
+
+const argv = process.argv.slice(2);
+
+if (argv.includes("--help") || argv.includes("-h") || argv.length === 0) {
+  process.stdout.write(
+    "Usage: codex exec [OPTIONS] [PROMPT]\n  -m, --model <MODEL>\n  -c, --config <key=value>\n  --skip-git-repo-check\n  codex exec resume [SESSION_ID] [PROMPT]\n"
+  );
+  process.exit(0);
+}
+
+const isExec = argv[0] === "exec";
+const isResume = isExec && argv[1] === "resume";
+
+function valueOf(flag) {
+  const i = argv.indexOf(flag);
+  return i >= 0 ? argv[i + 1] : undefined;
+}
+const modelId = valueOf("-m") || valueOf("--model");
+
+let effort = "medium";
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i] === "-c" && /model_reasoning_effort="?([^"]+)"?/.test(argv[i + 1] || "")) {
+    effort = RegExp.$1;
+  }
+}
+
+// session id (resume) is the arg right after "resume".
+const sessionId = isResume ? argv[2] : "codex-mock-session";
+
+// Task prompt = last non-flag arg.
+let task = "";
+for (let i = argv.length - 1; i >= 0; i--) {
+  const a = argv[i];
+  if (a.startsWith("-")) continue;
+  if (a === "exec" || a === "resume") continue;
+  if (i > 0 && (argv[i - 1] === "-m" || argv[i - 1] === "--model" || argv[i - 1] === "-c")) continue;
+  if (isResume && i === 2) continue; // that's the session id
+  task = a;
+  break;
+}
+
+const behavior = process.env.MOCK_BEHAVIOR || "ok";
+const resultText = process.env.MOCK_RESULT || `codex mock done`;
+const delayMs = Number(process.env.MOCK_DELAY_MS || 0);
+
+if (process.env.MOCK_TOUCH) {
+  try {
+    fs.appendFileSync(process.env.MOCK_TOUCH, `codex ${sessionId} ${task}\n`);
+  } catch {
+    /* ignore */
+  }
+}
+
+function emitOkAndExit() {
+  // codex --json JSONL events. Real codex carries the resumable id as `thread_id` on a
+  // `thread.started` event (NOT session_id) — mirror that so the adapter's extractSessionId is tested truthfully.
+  process.stdout.write(
+    JSON.stringify({ type: "thread.started", thread_id: sessionId }) + "\n"
+  );
+  process.stdout.write(
+    JSON.stringify({ type: "agent_message", text: resultText }) + "\n"
+  );
+  process.exit(0);
+}
+
+function sleepForever(ignoreSignals) {
+  if (process.env.MOCK_HARDCRASH_PIDFILE) {
+    try {
+      fs.writeFileSync(process.env.MOCK_HARDCRASH_PIDFILE, String(process.pid));
+    } catch {
+      /* ignore */
+    }
+  }
+  if (ignoreSignals) {
+    process.on("SIGTERM", () => {});
+    process.on("SIGINT", () => {});
+  }
+  setInterval(() => {}, 1 << 30);
+}
+
+switch (behavior) {
+  case "crash":
+    process.stderr.write("mock codex: boom (simulated crash)\n");
+    process.exit(3);
+    break;
+  case "authfail":
+    process.stderr.write("error: 401 Unauthorized invalid api key\n");
+    process.exit(1);
+    break;
+  case "netfail":
+    process.stderr.write("error: ECONNREFUSED ETIMEDOUT network unreachable\n");
+    process.exit(1);
+    break;
+  case "chatonly":
+    // Real signature codex >=0.139 emits when pointed at a Chat-Completions-only
+    // OpenAI endpoint (no /responses route, e.g. api.xiaomimimo.com/v1).
+    process.stderr.write(
+      "ERROR codex_models_manager::manager: failed to refresh available models: " +
+      "stream disconnected before completion: failed to decode models response: " +
+      "missing field `models`\n"
+    );
+    process.exit(1);
+    break;
+  case "hardcrash":
+    sleepForever(true);
+    break;
+  case "hang":
+    sleepForever(false);
+    break;
+  case "ok":
+  default:
+    if (delayMs > 0) {
+      setTimeout(emitOkAndExit, delayMs);
+    } else {
+      emitOkAndExit();
+    }
+    break;
+}
