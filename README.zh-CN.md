@@ -25,6 +25,12 @@ Pigeon 负责连接和管理，实际工作由各个 agent 工具执行。每次
 
 ## 开始使用
 
+### 安装方法
+
+将下面这句话粘贴到你使用的 agent 中：
+
+> 查看 https://github.com/luokinging/agent-pigeon 并帮我安装 Pigeon。
+
 选择你常用的接入方式。安装完成后，由当前 agent 操作 Pigeon，你在对话里描述任务即可。
 
 | 接入方式 | 适合场景 | 安装说明 |

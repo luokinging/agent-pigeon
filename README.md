@@ -25,6 +25,12 @@ Pigeon connects and manages the agents; each agent tool does the work. Task-spec
 
 ## Get started
 
+### Installation
+
+Paste this into your agent:
+
+> Read https://github.com/luokinging/agent-pigeon and help me install Pigeon.
+
 Choose how to connect Pigeon to your workflow. Once installed, your agent operates Pigeon while you describe the task in the conversation.
 
 | Integration | Use it for | Setup |
