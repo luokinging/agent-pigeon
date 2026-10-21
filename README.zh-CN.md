@@ -1,298 +1,118 @@
-# Claude Pigeon
+# Agent Pigeon
 
-> 把一段活委派给**任意厂商的模型**,在**任意兼容的 CLI 客户端**上后台跑,然后取回结果。
+把任务交给 coding agent，保留可续接的对话，并在执行期间追加指令。从终端、Claude Code、Hermes 或其他宿主调用同一个 `pigeon` CLI。
 
-**pigeon** 是一个 [Claude Code](https://code.claude.com) 插件。在主 Claude 会话里,你把一个自包含的任务交给 GLM、DeepSeek、Kimi、MiniMax、Qwen、GPT/Codex —— 任何能通过本机某个 CLI 客户端访问到的模型 —— 让它后台跑,跑完取回结果。
+[English](README.md)
 
-[English](./README.md)
+**宿主**是你发起任务的地方，**runner** 是实际执行任务的后端，两者可以自由组合。例如，从 Claude Code 调度 Codex，或从 Hermes 调度 Claude。Pigeon 保存会话、执行状态、结果和收集到的历史；集成插件负责调用 CLI。
 
----
+## 从源码安装
 
-## 亮点
+需要 **Node.js >=22.13**、npm，以及已安装的 runner（`claude`、`codex` 或 `hermes`）。进程管理主要面向 macOS/Linux。Node 22 可能输出 SQLite 实验性功能提示。
 
-- **多厂商一套流程** —— 任何 Anthropic 兼容模型用 `claude` CLI 驱动,任何 OpenAI 兼容模型用 `codex`。配一次,统一用。
-- **原生 provider,无需 key** —— 用 client 在你机器上已有的认证(它自己的会话,或全局 env)跑模型;多个模型挂在一个原生 provider 上(比如 gpt-xxx + gpt-yyy)可并行。见 [原生 provider](#原生-providerno-key-跑-client)。
-- **两种后台模式** —— 骑 Claude Code 原生后台(`/pigeon:run`,跑完自动通知)或 pigeon 自管 job(`/pigeon:work`,扇出与管理)。
-- **并行扇出** —— 一次性派发多个任务,用 status / result / cancel / continue 管理。
-- **自然语言触发** —— 说"pigeon …"它就帮你路由,不必打斜杠。
-
-## 前置要求
-
-- [Claude Code](https://code.claude.com)。
-- 你要用的 client CLI:**`claude`**(驱动 Anthropic 协议模型)和/或 **`codex`**(驱动 OpenAI 协议模型)。
-- 每个**已配置** provider 的 API key。挂在**原生 provider**(`codex-native` / `claude-native`)上的模型不需要 —— 复用 client 自己的认证。
-
-## 安装
-
-```bash
-claude plugin marketplace add luokinging/pigeon-cc
-claude plugin install pigeon@pigeon-cc
+```sh
+npm install
+npm link --workspace agent-pigeon
+pigeon --help
+pigeon capabilities --json
+pigeon config validate --json
 ```
 
-新开一个 Claude Code 会话 —— `/pigeon:*` 命令(以及 `pigeon` 自然语言触发)即可用。
+在仓库根目录执行 install/link，并保留链接指向的源码目录。完成 `npm install` 后，也可直接运行 `node /absolute/path/to/agent-pigeon/packages/cli/src/index.mjs ...`。开发安装使用本地 workspace；CLI 同时提供 `pigeon` 和 `agent-pigeon` 命令。
 
-之后更新到最新版:
+## 启动、追加指令、取得结果
 
-```bash
-claude plugin marketplace update pigeon-cc   # 先刷新 marketplace 缓存
-claude plugin update pigeon@pigeon-cc       # 再拉取最新插件版本
+进入 agent 应该工作的目录，提供任务、相关上下文和验收要求：
+
+```sh
+pigeon run --runner codex --background --json -- "检查 src 并报告缺陷"
 ```
 
-重启 Claude Code 生效。
+CLI 等到 runner 控制通道 ready 后返回 `session_id`、`execution_id` 和 `status`，通常为 `running`；快速任务也可能已到 `completed`。启动默认最多等待 **120 秒**，可通过 `PIGEON_STARTUP_TIMEOUT_MS`（毫秒）调整。启动结束后，任务继续在后台执行。
 
-## 快速上手
+![Agent Pigeon 流程：提交任务，runner 就绪后返回 ID，立即启动宿主后台 wait，向当前执行追加指令，取得结果，再续接会话创建下一轮执行。](docs/assets/pigeon-flow.svg)
 
-下文的 `gpt-xxx`、`gpt-yyy`、`glm-xxx`、`GLM-xxx`、`deepseek-xxx` 和 `claude-xxx` 均为占位符,不是可直接运行的模型名。请替换成 provider 支持且你的账号有权使用的模型 ID,并先通过 `/pigeon:config` 配置对应别名。思考档位和上下文长度以实际模型和端点为准。
+保存两个 ID：session（`pgs_...`）是一段持续对话，execution（`pge_...`）是其中一轮。将下面的占位 ID 换成实际返回值：
 
-```text
-/pigeon:config                  # 对话式:加模型 —— 已配置的(带 key)或原生的(无 key)
-/pigeon:list                    # 看你的模型
-/pigeon:run --model gpt-xxx -- 用 5 条要点总结 ./src 的架构   # 原生(你的 Codex),无 key
-/pigeon:run --model glm-xxx -- 用 5 条要点总结 ./src 的架构   # 已配置 provider;跑完通知你
+```sh
+# Agent：提交返回后立即通过宿主后台任务工具启动这条命令。
+# 在终端直接执行时，它会等待当前 execution 到达终态。
+pigeon wait pge_EXECUTION --json
+
+# 执行期间，向同一个 execution 追加指令。
+pigeon steer pge_EXECUTION --json -- "优先检查失败的登录测试"
+pigeon messages pgs_SESSION -n 10
+
+# 读取最终结果，再续接会话，创建下一轮 execution。
+pigeon result pge_EXECUTION --json
+pigeon resume pgs_SESSION --background --json -- "现在补回归测试"
 ```
 
----
+**Agent 默认流程：** 后台 run/resume 成功返回后，立即通过宿主后台任务启动 `wait EXECUTION --json`，再结束当前宿主回合。Claude Bash 使用 `run_in_background: true`，由 waiter 触发完成通知。提交调用的超时应覆盖启动等待并留余量，**默认设为 150 秒**。返回 `running` 后可直接 steer，无需先轮询 status 确认就绪。控制响应会说明指令的投递状态；新指令到达前，原执行也可能已经结束。
 
-## 原生 provider(无 key 跑 client)
+需要状态快照时使用 `status EXECUTION --json`，取消使用 `cancel EXECUTION --json`，查看事件使用 `events EXECUTION --json`。`messages` 默认展示简化历史，需要结构化数据时再加 `--raw`。`events --follow` 会持续观察，应放在宿主后台任务中运行。
 
-pigeon 里的 **provider** 是模型的来源:它回答模型从哪来、怎么认证。普通 provider 是「一把 key + 一个地址」。**原生 provider** 则是 pigeon **什么都不注入** —— 不给 key、不给地址,client 用它本机已有的那套认证(它自己的会话,或你设的全局 env)。pigeon 只把这次运行和你的 settings/hooks/CLAUDE.md 隔离开,**绝不碰认证**。
+启动失败返回非零退出码和 error JSON。已创建 execution 时，顶层 `session_id`、`execution_id`、`status` 可用于后续查询。若提交响应丢失，先检查 `pigeon executions --json` 再决定是否重试；若状态为 `unknown`，先核查后端和事件。Ready 现指 runner 控制就绪，替代旧的 manager 已启动确认；任务最终结果由终态 status/result 提供。
 
-内置两个原生 provider,自动存在(永不写进 config),对应 client 装了就出现:
+## 选择执行路由
 
-| Provider        | 协议      | Client   |
-| --------------- | --------- | -------- |
-| `codex-native`  | openai    | `codex`  |
-| `claude-native` | anthropic | `claude` |
+省略 provider 和 preset 时，`--runner codex` 使用该 runner 已有的认证与配置。需要配置服务时，创建 `$PIGEON_HOME/config.json`，默认路径为 `~/.pigeon/config.json`：
 
-provider 你不配 —— 你只把**模型**挂上去,每个 pin 自己的 `model_id`。多个模型可以共用一个原生 provider 并行跑。比如「用我的 Codex 跑 gpt-xxx 和 gpt-yyy」:
-
-```jsonc
-"models": {
-  "gpt-xxx": { "provider": "codex-native", "model_id": "gpt-xxx", "clients": ["codex"] },
-  "gpt-yyy": { "provider": "codex-native", "model_id": "gpt-yyy", "clients": ["codex"] }
-}
-```
-```text
-/pigeon:run --model gpt-xxx -- ...      # 两个都走你的 Codex 登录、无 key,
-/pigeon:run --model gpt-yyy -- ...      # 并行,各跑各的模型
-```
-
-- 无 key:你自己能用 `codex` / `claude`,挂在其原生 provider 上的模型就能用。
-- `/pigeon:list` 会用**单独一张表**列出本机探测到的原生 provider —— 仅作发现;挂个模型上去才能真正跑。
-- model_id 必须是你的 client 接受的(ChatGPT 账号的 Codex 登录只认该账号有权的模型)。
-
-**最快配置 —— 直接让 Claude Code 帮你做。** 在 Claude Code 会话里说:
-
-> 看看是否安装了 `claude` 和 `codex` CLI,有的话帮我把原生 `codex` 和 `claude` 模型配置上。
-
-它会探测 CLI、挑一个能用的 model_id,通过 `/pigeon:config` 把模型加好 —— 不用手写 JSON。
-
-> 注意:原生运行走的是你自己的会话,因此共享其速率限制 —— 大量并行原生 job 可能撞限流。
-
----
-
-## 配置
-
-配两种之一:**已配置 provider**(GLM、DeepSeek、Kimi… —— 带 key + 地址),或**原生 provider 上的模型**(无 key —— 只在 `codex-native` / `claude-native` 上写 model_id)。
-
-`/pigeon:config` 是**对话式**的,不带参数。直接运行它,pigeon 会反问你要配什么、一步步引导,你用自然语言逐项回答。它**不预设任何 provider 或模型**,只存你告诉它的。
-
-```text
-你:    /pigeon:config
-pigeon:  要配置什么?(某个 provider 的 endpoint + key · 一个模型 · 某模型的默认 client/effort)
-你:    加一个 provider
-pigeon:  哪个 provider,走什么协议,base URL 和 API key 是?
-你:    叫 zhipu,anthropic 协议,https://open.bigmodel.cn/api/anthropic,key sk-…
-pigeon:  在它上面加个模型吗?(provider · 传给 client 的 model_id · 哪些 client 能驱动)
-你:    模型 glm-xxx,model_id GLM-xxx,client claude
-pigeon:  我将保存:<回显结构化配置>,确认?
-你:    确认
-```
-
-### 存的是什么
-
-它写入 `~/.pigeon/config.json`(明文 key,在你本机,绝不进仓库)。一个两 provider 的例子:
-
-```jsonc
+```json
 {
-  "version": 1,
+  "version": 2,
   "providers": {
-    "zhipu":    { "protocols": ["anthropic"], "base_url": { "anthropic": "https://open.bigmodel.cn/api/anthropic" }, "api_key": "<key>" },
-    "deepseek": { "protocols": ["anthropic"], "base_url": { "anthropic": "https://api.deepseek.com/anthropic" },     "api_key": "<key>" }
+    "service": {
+      "protocols": ["openai-responses"],
+      "base_url": {"openai-responses": "https://example.com/v1"},
+      "api_key_env": "PIGEON_SERVICE_KEY"
+    }
   },
-  "models": {
-    "glm-xxx":  { "provider": "zhipu",    "model_id": "GLM-xxx",         "clients": ["claude"], "effort": ["high", "medium", "low"] },
-    "deepseek": { "provider": "deepseek", "model_id": "deepseek-xxx", "clients": ["claude"] }
+  "presets": {
+    "coding": {
+      "provider": "service",
+      "runner": "codex",
+      "model": "REPLACE_WITH_REAL_MODEL_ID"
+    }
   }
 }
 ```
 
-- `clients` 和 `effort` 都是**有序**的 —— 第一个是默认。
-- `effort` 是**可选**的。只有真正支持 effort/思考档位的模型才填;大多数第三方模型没有 effort —— 直接不填。见 [客户端与协议](#客户端与协议)。
-- 一个模型的 `clients` 必须能被其 provider 的协议驱动(`claude` 说 `anthropic`,`codex` 说 `openai`)。
+替换端点和模型，设置对应环境变量，再执行 `pigeon config validate --json`。之后可用 `pigeon run --preset coding --background --json -- "任务内容"` 提交。`--model` 指定后端真实模型 ID，`--preset` 选择保存的选项组合；显式参数覆盖 preset。Resume 沿用会话的路由和工作目录。
 
----
+Claude 对应 `anthropic-messages`，Codex 对应 `openai-responses`，Hermes 对应 `openai-chat-completions`。显式免认证 provider（`auth.type: none`）目前由 Codex 支持；Claude 和 Hermes 使用 API key 或 runner 已有认证。Capabilities 说明支持的控制能力和限制，config validate 检查路由配置。详见[配置、认证、状态和存储](docs/standalone.md)。
 
-## 使用
+## 宿主集成
 
-### `/pigeon:list` —— 看已配置什么
-
-```text
-/pigeon:list
-```
-```text
-Configured models
-MODEL_ID      MODEL     PROVIDER  PROTOCOL   CLIENTS  EFFORT
-------------  --------  --------  ---------  -------  ----------------
-GLM-xxx       glm-xxx   zhipu     anthropic  claude*  high*,medium,low
-deepseek-xxx  deepseek  deepseek  anthropic  claude*
-
-Native models (keyless — your own codex / claude)
-MODEL_ID    MODEL    PROVIDER       PROTOCOL   CLIENTS  EFFORT
-----------  -------  -------------  ---------  -------  ------
-gpt-xxx     gpt-xxx  codex-native   openai     codex*
-claude-xxx  opus     claude-native  anthropic  claude*
-
-* = default
-```
-
-`MODEL_ID` 是真正发给 client 的 id;`MODEL` 是你的别名(传给 `--model` 的)。两者可以不同(短别名对长 id)也可以相同。
-
-两张表:**Configured models**(带 key 的 provider)和 **Native models**(无 key —— 挂在 `codex-native` / `claude-native` 上,认证继承自 client)。哪张空就不显示哪张。
-
-如果某个原生 provider 本机探测到了(对应 client 已装)但还没挂模型,会有一行提示列出它 —— 纯发现:
-
-```text
-Native providers available (no key needed): claude-native — add a model on one with /pigeon:config.
-```
-
-挂个模型上去它就进 Native models 表、提示也随之去掉。探测到的原生 provider 都配了模型,就没有这行提示。
-
-### `/pigeon:run` —— 委派、不阻塞、跑完通知我
-
-适合"派一件、拿结果回来"。pigeon 跑模型,跑完 Claude Code 用通知把输出送回主 agent —— 对话**全程不阻塞**,也无需轮询。
-
-```text
-/pigeon:run --model glm-xxx -- 写一个匹配 RFC-5322 邮箱地址的正则,并简短解释
-```
-```text
-…(你可以继续干别的;模型跑完时 Claude 把结果带回来)
-Pigeon session: run-<uuid>
-```
-
-完成后在同一底层线程续接:
-
-```text
-/pigeon:run --session run-<uuid> -- 再给这个方案补测试
-```
-
-每一轮都通过 Claude Bash `run_in_background: true` 托管,完成后自动通知结果与同一个 pigeon session ID,无需 work job、continue 命令或轮询。首轮成功后将元数据保存在 `~/.pigeon/run-sessions/`(或 `$PIGEON_HOME/run-sessions/`),不保存凭据。续接继承原 model ID、client、effort、工作目录和 provider 身份,模型别名的配置变化不会改变历史线程。原 provider 的 endpoint 和 key 使用当前配置,支持凭据轮换;原生 session 继承 client 认证。同 session 并发续接会被拒绝。失败轮次保留最后成功的元数据,但 client 可能已写入部分线程历史。续接还要求 client 本地线程历史仍然可用。
-
-### `/pigeon:work` —— 委派成可管理的后台 job
-
-适合一次性扇出很多个、或需要 `cancel` / `continue`、或要跨 session 存活。立刻返回 `job-id`,稍后取结果。
-
-```text
-/pigeon:work --model glm-xxx -- 重构 src/auth.ts:把 login() 改成 async/await,行为不变
-```
-```text
-✓ Dispatched job glm-xxx-a1b2 in the background (glm-xxx/claude/high).
-  Check progress: /pigeon:status glm-xxx-a1b2
-  Fetch result:   /pigeon:result glm-xxx-a1b2
-```
-
-### `/pigeon:status` —— 查进度
-
-```text
-/pigeon:status               # 所有 job
-/pigeon:status glm-xxx-a1b2  # 单个 job
-```
-状态:`queued · running · done · failed · timeout · killed · crashed`(卡住的会标"疑似卡死")。
-
-### `/pigeon:result` —— 取输出
-
-```text
-/pigeon:result glm-xxx-a1b2
-```
-
-### `/pigeon:continue` —— 在同一线程上追加
-
-复用该 job 的线程,用新指令续接(在其之后、按提交顺序跑)。
-
-```text
-/pigeon:continue glm-xxx-a1b2 -- 再给错误分支加个单测
-```
-
-### `/pigeon:cancel` —— 停掉一个 job
-
-```text
-/pigeon:cancel glm-xxx-a1b2
-```
-
-### 并行扇出
-
-每个 `/pigeon:work` 都是独立 job —— 派多个,再逐个收:
-
-```text
-/pigeon:work --model glm-xxx  -- 生成数据模型
-/pigeon:work --model deepseek -- 写 API handlers
-/pigeon:work --model glm-xxx  -- 写测试
-/pigeon:status                # 看它们全部
-/pigeon:result <job-id>       # 谁好了取谁
-```
-
-### 自然语言(不打斜杠)
-
-装好后,直接用 **`pigeon`** 锚点说你的需求 —— `pigeon:dispatch` skill 会帮你路由:
-
-> "**pigeon**,把这个委派给 deepseek,跑完告诉我" · "**pigeon** 支持哪些模型?" · "配置 **pigeon**" · "我的 **pigeon** 任务到哪了?"
-
----
-
-## `/pigeon:run` vs `/pigeon:work`
-
-| | `/pigeon:run` | `/pigeon:work` |
+| 宿主 | 入口 | 完成结果获取 |
 |---|---|---|
-| 机制 | 骑 Claude Code 原生后台任务 | pigeon 自管 detach job |
-| 非阻塞 + 自动通知 | ✅ 原生 | ❌(轮询 status / 取 result) |
-| 同线程续接 | `run --session <id>`,每轮自动通知 | `continue <job-id>` |
-| 自管 status / result / cancel | — | ✅ |
-| 适合 | 一件事,"跑完叫我" | 扇出、生命周期管理 |
+| 终端/程序 | `pigeon` CLI | wait、events、status/result |
+| Claude Code | [Claude 插件](integrations/claude-code) | 提交后立即启动宿主后台 wait |
+| Hermes | [Hermes 插件](integrations/hermes) | `pigeon` 工具和 `/pigeon`；后续查询 status/result，或单独启动宿主后台 wait |
+| 其他支持 skill 的宿主 | [通用 skill](integrations/skills/pigeon/SKILL.md) | 使用宿主支持的后台 wait 和回调 |
 
----
+本地加载 Claude 插件：
 
-## 工作原理
+```sh
+claude --plugin-dir /absolute/path/to/agent-pigeon/integrations/claude-code
+```
 
-两层:
+然后使用 `/pigeon-standalone:pigeon run --preset coding -- 任务`。复制或缓存后的集成需要 PATH 上的 `pigeon`，或用 `PIGEON_CLI` 指向一个可执行文件/JS 文件。宿主会话结束后，共享 Pigeon 任务继续执行，取消任务需要显式操作。
 
-- **协议层** —— 一个 model 能被某个 client 驱动,当且仅当该 client 会说的协议在 model endpoint 暴露的协议里。GLM 暴露 Anthropic 协议,所以 `claude` CLI 能驱动它(只需配 base_url + key + model)。只支持自家工具协议的模型,就用那个工具驱动(如 OpenAI Responses 用 `codex`)。
-- **应用层** —— slash 命令 + 后台运行时。从 `(model, client, effort)` 解析出一个 job,把 client 作为隔离的 headless 进程起起来,你通过上面的命令交互。
+Hermes 宿主插件没有自动 watcher。它为 run/resume 设置“启动超时加 30 秒”的传输超时，其他操作保留 30 秒。Hermes 作为 **runner** 时连接已有 Gateway；可通过 `PIGEON_HERMES_ROOT` 和 `PIGEON_HERMES_PYTHON` 覆盖环境发现。详见[集成安装和检查方法](docs/integrations.md)。
 
-委派运行与你本机配置**隔离**(已配置模型:`claude --bare`;原生 provider 模型:`claude --setting-sources "" --strict-mcp-config`,既保登录又跳过 settings/hooks/CLAUDE.md;`codex --ignore-user-config --ignore-rules` 两者通用),并默认 bypass 权限,让 headless 任务能在其工作目录内读写文件。job 在 per-thread **FIFO** 锁下执行(同线程的 continue 按顺序跑),并以可验证的进程身份追踪(被复用的 PID 绝不会误杀无关进程)。
+CLI 的 `result --json` 和终态 `wait --json` 保留完整已存储结果；status/messages 提供有界预览。Hermes 会另行标记宿主响应长度限制造成的截断，完整结果可从直接 CLI 取得。测试区分本机 native runner 执行、模拟 provider 响应及插件装载/传输，具体检查范围见上述文档。
 
-> 委派出去的子进程**看不到**你的主对话 —— 它只看到你传进去的任务正文(以及 `run --session` 或 `/pigeon:continue` 时它自己的历史线程)。任务需要的上下文请写进任务里,或让它读工作目录下的文件。
+## Legacy Claude 插件
 
----
+原根目录插件、命令、scripts、hooks 和旧任务继续保留，详见 [Legacy 插件文档](docs/legacy-plugin.zh-CN.md)。
 
-## 客户端与协议
+```sh
+claude plugin marketplace add luokinging/agent-pigeon
+claude plugin install pigeon@pigeon-cc
+```
 
-| 客户端 | 协议 | 可驱动 |
-|---|---|---|
-| `claude` | anthropic | Claude,以及任何 Anthropic 兼容端点(GLM、DeepSeek、Kimi、MiniMax、Qwen…) |
-| `codex` | openai | OpenAI,以及任何 OpenAI 兼容端点 |
-
-**关于 effort。** 每个客户端 CLI *接受*一组固定的 effort/思考档位 —— `claude`:`low / medium / high / xhigh / max`;`codex`:`none / minimal / low / medium / high / xhigh`。但 effort 只有该客户端**自家**的模型才真正生效(`claude` 对 Anthropic 自家模型、`codex` 对 OpenAI 自家模型)。**大多数第三方 Anthropic/OpenAI 兼容模型 —— GLM、DeepSeek、Kimi、MiniMax、Qwen… —— 根本没有 effort/思考控制。** 部分 provider 提供自己的控制方式,请以具体模型和端点的文档为准。所以某模型的 `effort` 列表只填*该模型实际支持的*——往往直接不填。pigeon 只接受既在该模型列表里、又被所选 client 认可的 effort。
-
-新增一个 client = 加一个适配器文件;registry/运行时不用改。
-
----
-
-## 说明
-
-- **默认不限制执行时长** —— 委派的 agent 可以跑几小时。job 只在跑完、`/pigeon:cancel`、崩溃或会话关闭时结束。想要墙钟上限可按 model/provider 配 `timeout_ms`(毫秒),或用 `PIGEON_TIMEOUT_MS` 环境变量全局设。
-- **面向 POSIX**(macOS / Linux):用进程组、信号、`ps` 做存活/身份判定。Windows 为 best-effort。
-- API key 以明文存于本机 `~/.pigeon/config.json`。分享过的 key 请及时轮换。
-- session 归属用 Claude Code 官方的 `CLAUDE_ENV_FILE` 机制,每个会话的后台 job 会在其 `SessionEnd` 时清理。
+该 marketplace 入口安装 legacy 根插件，`pigeon-cc` 保留为兼容 marketplace 名称。独立集成位于 `integrations/`。旧 `/pigeon:run --session`、模型别名、ID 和存储沿用原语义。旧任务可通过完整 checkout 中的 `pigeon legacy ...` 或原 scripts 管理。独立集成在宿主退出后保持共享任务运行；legacy 清理 hooks 作用于 legacy 任务。
 
 ## 许可
 

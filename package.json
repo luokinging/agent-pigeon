@@ -1,0 +1,15 @@
+{
+  "name": "agent-pigeon-workspace",
+  "private": true,
+  "version": "2.0.0-dev.0",
+  "type": "module",
+  "workspaces": ["packages/core", "packages/cli"],
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:standalone": "node --test test/standalone-*.test.mjs",
+    "test:package": "node --test test/standalone-package.test.mjs",
+    "test:hermes-plugin": "python3 -I integrations/hermes/tests/smoke.py",
+    "pigeon": "node packages/cli/src/index.mjs"
+  }
+}

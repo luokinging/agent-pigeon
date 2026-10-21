@@ -1,0 +1,5 @@
+{
+  "name": "pigeon-standalone",
+  "version": "2.0.0-dev.0",
+  "description": "Thin Claude Code integration for independent Pigeon sessions and executions"
+}

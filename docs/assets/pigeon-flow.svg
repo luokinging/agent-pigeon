@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 610" role="img" aria-labelledby="title desc">
+  <title id="title">Agent Pigeon task lifecycle</title>
+  <desc id="desc">Submit a background run. Once the runner control channel is ready, receive session and execution IDs. Immediately start a host background waiter. While the execution runs, steer it using the same execution ID. Retrieve its terminal result. Resume the session to create a new execution. Hosts without completion callbacks use later status and result queries.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#64748b"/></marker>
+    <style>
+      text { font-family: system-ui, -apple-system, sans-serif; fill: #162a41; text-anchor: middle; }
+      .label { font-size: 19px; font-weight: 650; }
+      .detail { font-size: 15px; fill: #455970; }
+      .box { fill: #fff; stroke: #c6d2df; stroke-width: 1.5; }
+      .active { fill: #edf5ff; stroke: #5b88b9; stroke-width: 1.5; }
+      .line { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="760" height="610" rx="18" fill="#f5f8fc"/>
+  <rect x="170" y="22" width="420" height="66" rx="12" class="box"/>
+  <text x="380" y="49" class="label">1. Submit run --background</text>
+  <text x="380" y="72" class="detail">Startup wait: 120 s by default</text>
+  <path d="M380 88V115" class="line"/>
+  <rect x="125" y="120" width="510" height="90" rx="12" class="active"/>
+  <text x="380" y="148" class="label">2. Runner control ready → return IDs</text>
+  <text x="380" y="173" class="detail">session_id + execution_id · usually running</text>
+  <text x="380" y="195" class="detail">A fast task may already be completed</text>
+  <path d="M275 210V247" class="line"/>
+  <path d="M520 210V247" class="line"/>
+  <rect x="35" y="252" width="340" height="98" rx="12" class="active"/>
+  <text x="205" y="282" class="label">3. Start host background wait</text>
+  <text x="205" y="308" class="detail">Immediately after submission returns</text>
+  <text x="205" y="332" class="detail">Host callback delivers completion</text>
+  <rect x="400" y="252" width="325" height="98" rx="12" class="box"/>
+  <text x="562" y="282" class="label">Steer while running</text>
+  <text x="562" y="308" class="detail">Use the same execution_id</text>
+  <text x="562" y="332" class="detail">No readiness status polling</text>
+  <path d="M205 350V394H380V413" class="line"/>
+  <path d="M562 350V394H380" fill="none" stroke="#64748b" stroke-width="2"/>
+  <rect x="170" y="418" width="420" height="66" rx="12" class="box"/>
+  <text x="380" y="446" class="label">4. Read terminal result</text>
+  <text x="380" y="470" class="detail">wait / result execution_id --json</text>
+  <path d="M380 484V508" class="line"/>
+  <text x="380" y="533" class="label">Resume session_id → new execution_id</text>
+  <text x="380" y="559" class="detail">Repeat the same submission and wait flow for each turn</text>
+  <text x="380" y="590" class="detail">No host callback? Query status/result later. Hermes installs no watcher.</text>
+</svg>

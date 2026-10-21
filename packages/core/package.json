@@ -1,0 +1,12 @@
+{
+  "name": "@agent-pigeon/core",
+  "version": "2.0.0-dev.0",
+  "type": "module",
+  "exports": {
+    "./config": "./src/config.mjs",
+    "./store": "./src/store.mjs",
+    "./runtime": "./src/runtime.mjs",
+    "./runners": "./src/runners/index.mjs"
+  },
+  "engines": { "node": ">=22.13.0" }
+}

@@ -1,0 +1,6 @@
+name: pigeon
+version: 2.0.0-dev.0
+description: Delegate and inspect independent Pigeon sessions through the local CLI
+provides_tools:
+  - pigeon
+provides_hooks: []

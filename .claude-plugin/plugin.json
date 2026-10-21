@@ -2,7 +2,7 @@
   "name": "pigeon",
   "version": "1.1.0",
   "description": "Delegate a chunk of work to any vendor / any CLI client's model, run it in the background, and fetch the result back.",
-  "homepage": "https://github.com/luokinging/pigeon-cc",
+  "homepage": "https://github.com/luokinging/agent-pigeon",
   "author": {
     "name": "luokinging"
   }
