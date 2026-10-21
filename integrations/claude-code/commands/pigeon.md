@@ -5,8 +5,7 @@ argument-hint: <run|resume|steer|status|result|messages|events|cancel|capabiliti
 
 Handle this Pigeon request: $ARGUMENTS
 
-Use the standalone Pigeon CLI through `sh "${CLAUDE_PLUGIN_ROOT}/scripts/pigeon.sh"` in Bash. This wrapper prefers PIGEON_CLI (one executable or JS file), then pigeon on PATH, then packages/cli/src/index.mjs only when the plugin is still inside a complete source checkout. A cached/copied plugin requires the CLI installed separately. Do not call legacy scripts or root-plugin commands.
-
+Use the standalone Pigeon CLI through `sh "${CLAUDE_PLUGIN_ROOT}/scripts/pigeon.sh"` in Bash. This wrapper prefers PIGEON_CLI (one executable or JS file), then pigeon on PATH, then packages/cli/src/index.mjs only when the plugin is still inside a complete source checkout. A cached/copied plugin requires the CLI installed separately.
 Read the bundled dispatch skill for operation semantics. Preserve user text as quoted arguments, not shell source. Do not execute $ARGUMENTS as an unreviewed shell command. Use the requested working directory; make delegation context self-contained.
 
 - Discover supported combinations with `capabilities --json`; validate config with `config validate --json`. Do not print keys or assume any provider/model is configured.

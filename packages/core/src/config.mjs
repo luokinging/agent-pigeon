@@ -32,7 +32,7 @@ export function loadConfig() {
   try {
     raw = fs.readFileSync(file, "utf8");
   } catch (error) {
-    if (error.code === "ENOENT") return { version: 1, providers: {}, models: {}, presets: {} };
+    if (error.code === "ENOENT") return { version: 2, providers: {}, presets: {} };
     throw new Error(`Cannot read config ${file}: ${error.message}`);
   }
   let config;
@@ -44,15 +44,6 @@ export function loadConfig() {
   }
   if (!object(config)) throw new Error("Config top level must be an object.");
   return config;
-}
-
-function protocolName(protocol, provider = {}) {
-  if (protocol === "anthropic") return "anthropic-messages";
-  if (protocol === "openai") {
-    if (provider.wire_api === "chat" || provider.wire_api === "chat-completions") return "openai-chat-completions";
-    return "openai-responses";
-  }
-  return protocol;
 }
 
 function endpoint(value) {
@@ -73,15 +64,12 @@ function providerDetails(provider, requireKey = true) {
   if (!Array.isArray(provider.protocols) || !provider.protocols.length) {
     throw new Error("Provider protocols must be a non-empty array.");
   }
-  if (provider.wire_api !== undefined && !["responses", "chat", "chat-completions"].includes(provider.wire_api)) {
-    throw new Error("Unknown legacy wire_api; select responses or chat explicitly.");
-  }
+  if (provider.wire_api !== undefined) throw new Error("Unsupported provider field wire_api; use a concrete protocol name.");
   const endpoints = {};
-  for (const value of provider.protocols) {
-    const protocol = protocolName(value, provider);
-    if (!PROTOCOLS.has(protocol)) throw new Error(`Unknown protocol "${value}".`);
+  for (const protocol of provider.protocols) {
+    if (!PROTOCOLS.has(protocol)) throw new Error(`Unknown protocol "${protocol}".`);
     const urls = provider.base_url ?? provider.baseUrl;
-    const url = endpoint(typeof urls === "string" ? urls : object(urls) ? own(urls, value) ?? own(urls, protocol) : null);
+    const url = endpoint(typeof urls === "string" ? urls : object(urls) ? own(urls, protocol) : null);
     if (endpoints[protocol] && endpoints[protocol] !== url) throw new Error(`Conflicting endpoints for ${protocol}.`);
     endpoints[protocol] = url;
   }
@@ -105,7 +93,9 @@ function providerDetails(provider, requireKey = true) {
 
 function configShape(config) {
   if (!object(config)) throw new Error("Config top level must be an object.");
-  for (const key of ["providers", "models", "presets"]) {
+  if (config.version !== undefined && config.version !== 2) throw new Error("Unsupported config version; expected 2.");
+  if (config.models !== undefined) throw new Error("Unsupported config field models; use presets with actual model IDs.");
+  for (const key of ["providers", "presets"]) {
     if (config[key] !== undefined && !object(config[key])) throw new Error(`${key} must be an object.`);
   }
 }
@@ -127,7 +117,8 @@ function runnerScope(runner, cwd) {
 function resolve(options, config, cwd, requireKey = true) {
   configShape(config);
   if (!object(options)) throw new Error("Binding options must be an object.");
-  for (const key of ["preset", "provider", "runner", "client", "model", "protocol", "effort", "legacyModel"]) {
+  if (options.legacyModel !== undefined) throw new Error("Unsupported option legacyModel; use preset or an actual model ID.");
+  for (const key of ["preset", "provider", "runner", "client", "model", "protocol", "effort"]) {
     if (options[key] !== undefined && !text(options[key])) throw new Error(`${key} must be a non-empty string.`);
   }
   let preset = {};
@@ -135,14 +126,7 @@ function resolve(options, config, cwd, requireKey = true) {
     preset = own(config.presets ?? {}, options.preset);
     if (!object(preset)) throw new Error(`Unknown preset "${options.preset}".`);
   }
-  let legacy = {};
-  if (options.legacyModel !== undefined) {
-    if (options.preset !== undefined || options.model !== undefined) throw new Error("legacyModel cannot be combined with preset or model.");
-    const model = own(config.models ?? {}, options.legacyModel);
-    if (!object(model)) throw new Error(`Unknown legacy model "${options.legacyModel}".`);
-    legacy = { provider: model.provider, model: model.model_id, runner: model.clients?.[0] };
-  }
-  const selected = { ...legacy, ...preset };
+  const selected = { ...preset };
   for (const key of ["provider", "model", "protocol", "effort"]) {
     if (options[key] !== undefined) selected[key] = options[key];
   }
@@ -197,12 +181,6 @@ function resolve(options, config, cwd, requireKey = true) {
   if (model !== null && !text(model)) throw new Error("model must be a non-empty string.");
   if (effort !== null) {
     if (!RUNNERS[runner].efforts.includes(effort)) throw new Error(`Invalid effort "${effort}" for runner ${runner}. Allowed: ${RUNNERS[runner].efforts.join(", ")}.`);
-    // Constraints describe user configuration, not a claim of actual model support.
-    for (const entry of Object.values(config.models ?? {})) {
-      if (object(entry) && entry.provider === provider && entry.model_id === model && entry.effort !== undefined) {
-        if (!Array.isArray(entry.effort) || !entry.effort.includes(effort)) throw new Error(`Effort ${effort} is outside configured model effort constraints for ${model}.`);
-      }
-    }
   }
   const resolvedCwd = path.resolve(cwd);
   return {
@@ -226,26 +204,6 @@ export function validateConfig(config) {
       if (nativeRunner(name)) throw new Error("Native provider names are reserved.");
       providerDetails(provider, false);
     } catch (error) { errors.push(`provider "${name}": ${error.message}`); }
-  }
-  for (const [name, model] of Object.entries(config.models ?? {})) {
-    const tag = `model "${name}"`;
-    if (!object(model)) { errors.push(`${tag} must be an object.`); continue; }
-    if (!text(model.model_id)) errors.push(`${tag} must have model_id.`);
-    if (!text(model.provider) || !nativeRunner(model.provider) && !own(config.providers ?? {}, model.provider)) errors.push(`${tag} references an unknown provider.`);
-    if (model.effort !== undefined && (!Array.isArray(model.effort) || model.effort.some((value) => !text(value)))) errors.push(`${tag} effort must be an array of strings.`);
-    if (Array.isArray(model.effort) && model.effort.length) {
-      const runners = Array.isArray(model.clients) ? model.clients : Object.keys(RUNNERS);
-      if (!model.effort.some((effort) => runners.some((runner) => own(RUNNERS, runner)?.efforts.includes(effort)))) {
-        errors.push(`${tag} effort has no value allowed by its configured runners.`);
-      }
-    }
-    if (model.clients !== undefined) {
-      if (!Array.isArray(model.clients) || !model.clients.length) errors.push(`${tag} clients must be a non-empty array.`);
-      else for (const runner of model.clients) {
-        try { resolve({ provider: model.provider, model: model.model_id, runner }, config, process.cwd(), false); }
-        catch (error) { errors.push(`${tag}: ${error.message}`); }
-      }
-    }
   }
   for (const [name, preset] of Object.entries(config.presets ?? {})) {
     try {

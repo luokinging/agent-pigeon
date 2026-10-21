@@ -1,118 +1,85 @@
 # Agent Pigeon
 
-Delegate work to a coding agent, keep its conversation across turns, and send additional instructions while it runs. Use the same `pigeon` CLI from a terminal, Claude Code, Hermes, or another host.
+**Connect agent tools. Run multiple agents in parallel across providers.**
 
-[简体中文](README.zh-CN.md)
+Claude Code, Codex, and Hermes can each delegate through Pigeon and execute delegated tasks. One agent can call several others at once, choose their model providers, follow their progress, exchange messages, and continue their conversations after a task finishes.
 
-Choose the **host** where you ask for work and the **runner** that executes it independently. For example, Claude Code can delegate to Codex, and Hermes can delegate to Claude. Pigeon stores sessions, execution state, results, and collected history; integrations call the CLI.
+[简体中文 · README.zh-CN.md](README.zh-CN.md)
 
-## Install from a checkout
+![Claude Code, Codex, and Hermes connect through Pigeon to multiple parallel agent instances grouped by provider.](docs/assets/pigeon-flow.svg)
 
-Requires **Node.js >=22.13**, npm, and an installed runner (`claude`, `codex`, or `hermes`). Process management primarily targets macOS/Linux. Node 22 may print an experimental SQLite warning.
+Run several instances of the same tool alongside other tools. The provider groups illustrate one possible setup; available combinations follow each tool's protocol support.
 
-```sh
-npm install
-npm link --workspace agent-pigeon
-pigeon --help
-pigeon capabilities --json
-pigeon config validate --json
-```
+## One entry point, multiple agents
 
-Run install/link at the repository root and keep the linked checkout in place. After `npm install`, you can also invoke `node /absolute/path/to/agent-pigeon/packages/cli/src/index.mjs ...` directly. The development install uses the local workspace; both `pigeon` and `agent-pigeon` commands are available.
+| Capability | What it enables |
+|---|---|
+| **Cross-tool delegation** | Call Claude Code, Codex, or Hermes from your current agent for implementation, review, or testing |
+| **Parallel execution** | Run independent tasks together, including multiple instances of the same tool |
+| **Multiple providers** | Select a provider, model, and reasoning effort for a task, or use the tool's existing setup |
+| **Live communication** | Add instructions and let active agents exchange updates |
+| **Persistent conversations** | Follow up after a task finishes with its context intact |
+| **Unified management** | Read recent messages, retrieve results, and cancel individual tasks |
 
-## Run, steer, and collect a result
+Pigeon connects and manages the agents; each agent tool does the work. Task-specific configuration stays within the invocation or session, preserving the tool's global settings.
 
-Start in the directory where the agent should work. Give it the task, relevant context, and success criteria:
+## Get started
 
-```sh
-pigeon run --runner codex --background --json -- "Review src and report defects"
-```
+Choose how to connect Pigeon to your workflow. Once installed, your agent operates Pigeon while you describe the task in the conversation.
 
-The CLI waits for the runner's control channel to become ready, then returns `session_id`, `execution_id`, and `status`, usually `running`. A fast task can already return `completed`. Startup waits up to **120 seconds**, configurable with `PIGEON_STARTUP_TIMEOUT_MS` in milliseconds. Task execution continues in the background after startup.
-
-![Agent Pigeon flow: submit, receive IDs after runner readiness, start a host background waiter, steer the active execution, collect the result, then resume the session for a new execution.](docs/assets/pigeon-flow.svg)
-
-Keep both IDs. A session (`pgs_...`) is the conversation; an execution (`pge_...`) is one turn. Replace these placeholders with the returned values:
-
-```sh
-# Agents: launch this immediately through the host's background task tool.
-# In a terminal, this command waits until the execution reaches a terminal state.
-pigeon wait pge_EXECUTION --json
-
-# While it runs, send additional instructions to the same execution.
-pigeon steer pge_EXECUTION --json -- "Prioritize the failing login tests"
-pigeon messages pgs_SESSION -n 10
-
-# Read the final result, then continue the conversation in a new execution.
-pigeon result pge_EXECUTION --json
-pigeon resume pgs_SESSION --background --json -- "Now add regression tests"
-```
-
-**Agent default:** immediately after a successful background run/resume returns, launch `wait EXECUTION --json` in a host background task, before ending the host turn. Claude Bash uses `run_in_background: true`; the waiter supplies the completion notification. Give the submission call enough time for startup plus overhead: **150 seconds by default**. A `running` response allows steer immediately, without readiness status polling. Read each control acknowledgment for its delivery state; a turn can finish before a new instruction arrives.
-
-Use `status EXECUTION --json` for a snapshot, `cancel EXECUTION --json` to cancel, and `events EXECUTION --json` for recorded events. `messages` defaults to a concise history view; add `--raw` when structured history is needed. `events --follow` is a long-lived observer and belongs in a host background task.
-
-Startup failures exit nonzero with error JSON. When an execution was created, top-level `session_id`, `execution_id`, and `status` let you inspect it. If a response is lost, inspect `pigeon executions --json` before retrying. For `unknown` outcomes, inspect the backend and events before retry/resume. Runner readiness replaces the earlier manager-started acknowledgment; final task success is reported by terminal status/result.
-
-## Choose a route
-
-Without a provider or preset, `--runner codex` uses the runner's existing authentication and configuration. To configure a service, create `$PIGEON_HOME/config.json` (default `~/.pigeon/config.json`):
-
-```json
-{
-  "version": 2,
-  "providers": {
-    "service": {
-      "protocols": ["openai-responses"],
-      "base_url": {"openai-responses": "https://example.com/v1"},
-      "api_key_env": "PIGEON_SERVICE_KEY"
-    }
-  },
-  "presets": {
-    "coding": {
-      "provider": "service",
-      "runner": "codex",
-      "model": "REPLACE_WITH_REAL_MODEL_ID"
-    }
-  }
-}
-```
-
-Replace the endpoint/model, set the named environment variable, and run `pigeon config validate --json`. Then submit with `pigeon run --preset coding --background --json -- "Your task"`. `--model` selects the actual backend model ID; `--preset` selects saved options. Explicit flags override preset values. Resume preserves the session's route and working directory.
-
-Protocols are `anthropic-messages` for Claude, `openai-responses` for Codex, and `openai-chat-completions` for Hermes. Explicit unauthenticated providers (`auth.type: none`) currently work with Codex; use API-key or runner-managed authentication for Claude and Hermes. Capability output describes supported controls and limitations, while configuration validation checks route compatibility. See [configuration, authentication, states, and storage](docs/standalone.md) for details.
-
-## Host integrations
-
-| Host | Entry | Completion handling |
+| Integration | Use it for | Setup |
 |---|---|---|
-| Terminal/program | `pigeon` CLI | wait, events, status/result |
-| Claude Code | [Claude plugin](integrations/claude-code) | submit, then immediately start host background wait |
-| Hermes | [Hermes plugin](integrations/hermes) | `pigeon` tool and `/pigeon`; later status/result, or a separate host background waiter |
-| Other skill-aware hosts | [Generic skill](integrations/skills/pigeon/SKILL.md) | host-supported background wait and callback |
+| **Skill** | Codex and other skill-aware tools, or an agent that can read the instructions directly | [docs/install.md#skill](docs/install.md#skill) |
+| **Claude Code plugin** | Delegation and completion notifications in Claude Code | [docs/install.md#claude-code](docs/install.md#claude-code) |
+| **Hermes plugin** | Calling and managing other agents from Hermes | [docs/install.md#hermes](docs/install.md#hermes) |
+| **CLI** | Scripts, terminals, and custom integrations | [docs/install.md#cli](docs/install.md#cli) |
 
-Load the Claude plugin locally:
+Requires Node.js 22.13+ and locally installed, configured agent tools. Primarily supports macOS and Linux. The current version installs from source; the steps are in [docs/install.md](docs/install.md).
 
-```sh
-claude --plugin-dir /absolute/path/to/agent-pigeon/integrations/claude-code
-```
+## Try parallel collaboration
 
-Then use `/pigeon-standalone:pigeon run --preset coding -- TASK`. Copied/cached integrations need `pigeon` on PATH or `PIGEON_CLI` pointing to one executable/JS file. Ending a host conversation leaves shared Pigeon executions running; cancellation is explicit.
+In any agent conversation with Pigeon connected, ask:
 
-The Hermes host plugin installs no automatic watcher. Its run/resume transport timeout is startup timeout plus 30 seconds; other operations use 30 seconds. Hermes as a **runner** connects to an existing Gateway. `PIGEON_HERMES_ROOT` and `PIGEON_HERMES_PYTHON` override runner environment discovery. See [integration installation and checks](docs/integrations.md).
+> Use Pigeon to run three tasks at once: have one Codex review the API, another Codex review the tests, and Hermes assess the implementation approach. Ask them to analyze only, then summarize their findings for me.
 
-The CLI preserves the complete stored result through `result --json` and terminal `wait --json`. Status/messages are bounded previews. Hermes also marks truncation imposed by its host-response budget; use the direct CLI to retrieve the full stored result. Test coverage distinguishes local native-runner execution, simulated provider responses, and plugin loading/transport; see the guides for each check's scope.
+To use different model services, save named presets and select them in your request:
 
-## Legacy Claude plugin
+> Use the review preset for the reviews and the research preset for the design analysis. Run them in parallel.
 
-The original root plugin, commands, scripts, hooks, and old jobs remain available. See [Legacy plugin documentation](docs/legacy-plugin.md).
+While they work, add instructions or arrange direct communication:
 
-```sh
-claude plugin marketplace add luokinging/agent-pigeon
-claude plugin install pigeon@pigeon-cc
-```
+> Tell the reviewers to focus on login first. Give the two review agents each other's communication addresses so they can exchange findings directly.
 
-This marketplace entry installs the legacy root plugin; `pigeon-cc` remains the marketplace name for compatibility. Standalone integrations live under `integrations/`. Legacy `/pigeon:run --session`, model aliases, IDs, and storage retain their original meaning. Use `pigeon legacy ...` from a complete checkout or the original scripts for old jobs. The standalone integrations leave shared tasks running when a host session ends; legacy cleanup hooks apply to legacy jobs.
+Follow up when a task finishes:
+
+> Ask the agent that reviewed the API to propose changes based on its findings.
+
+Your current agent assigns tasks, keeps track of communication addresses, and collects results. Independent tasks can run in parallel; coordinate file ownership or use separate working directories when agents edit code.
+
+## Supported tools
+
+| Tool | Can delegate through Pigeon | Can execute tasks |
+|---|---|---|
+| Claude Code | Plugin or skill | Yes |
+| Codex | Skill or CLI | Yes |
+| Hermes | Plugin or CLI | Yes |
+| Other agent tools | Can connect by reading the skill and running the local CLI | Additional adapters required |
+
+The Claude Code integration uses background waiting to bring completion notifications back automatically. The Hermes plugin currently retrieves results on request. Other integrations use their host's background notification capabilities.
+
+## Models and providers
+
+Use an agent tool's existing login and default model, or explicitly select a provider, model, and reasoning effort. Presets give a name to a common combination so you can reuse it across tasks.
+
+Custom endpoints currently use Anthropic Messages with Claude Code, OpenAI Responses with Codex, and OpenAI Chat Completions with Hermes. Configuration examples: [docs/standalone.md#configuration](docs/standalone.md#configuration).
+
+## Documentation
+
+- Installation: [docs/install.md](docs/install.md)
+- Plugins and skills: [docs/integrations.md](docs/integrations.md)
+- Configuration and command reference: [docs/standalone.md](docs/standalone.md)
+- Agent instructions: [integrations/skills/pigeon/SKILL.md](integrations/skills/pigeon/SKILL.md)
+- Repository: https://github.com/luokinging/agent-pigeon
 
 ## License
 

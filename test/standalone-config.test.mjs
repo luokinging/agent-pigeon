@@ -7,11 +7,11 @@ import { RUNNERS, home, loadConfig, validateConfig, resolveBinding, publicBindin
 
 function sampleConfig() {
   return {
-    version: 1,
+    version: 2,
     providers: {
       service: {
-        protocols: ["anthropic", "openai"],
-        base_url: { anthropic: "https://example.com/anthropic", openai: "https://example.com/v1" },
+        protocols: ["anthropic-messages", "openai-responses"],
+        base_url: { "anthropic-messages": "https://example.com/anthropic", "openai-responses": "https://example.com/v1" },
         api_key: "test-key",
       },
       chat: {
@@ -19,9 +19,6 @@ function sampleConfig() {
         base_url: { "openai-chat-completions": "https://chat.example.com/v1" },
         api_key: "chat-key",
       },
-    },
-    models: {
-      coding: { provider: "service", model_id: "actual-model", clients: ["codex", "claude"], effort: ["high", "medium"] },
     },
     presets: {
       coding: { provider: "service", runner: "codex", protocol: "openai-responses", model: "actual-model", effort: "high" },
@@ -114,15 +111,14 @@ test("preset flags override explicitly and revalidate the resulting route", () =
   assert.deepEqual(config, original);
 });
 
-test("model is a literal ID and only legacyModel expands old aliases", () => {
+test("model is a literal ID and removed model aliases are rejected", () => {
   assert.equal(resolve({ provider: "service", runner: "codex", model: "coding" }).model, "coding");
   assert.equal(resolve({ runner: "codex", model: "coding" }).native, true);
-  const legacy = resolve({ legacyModel: "coding" });
-  assert.equal(legacy.model, "actual-model");
-  assert.equal(legacy.runner, "codex");
-  assert.equal(legacy.provider, "service");
-  assert.throws(() => resolve({ legacyModel: "coding", model: "actual-model" }), /cannot be combined/);
-  assert.throws(() => resolve({ legacyModel: "missing" }), /Unknown legacy model/);
+  assert.throws(() => resolve({ runner: "codex", legacyModel: "coding" }), /Unsupported option legacyModel/);
+  const config = sampleConfig();
+  config.models = { coding: { provider: "service", model_id: "actual-model", clients: ["codex"] } };
+  assert.match(validateConfig(config)[0], /Unsupported config field models/);
+  assert.throws(() => resolve({ runner: "codex" }, config), /Unsupported config field models/);
 });
 
 test("runner selection requires an explicit default or a unique compatible route", () => {
@@ -156,39 +152,42 @@ test("invalid runner, provider, protocol, model and alias combinations fail", ()
   for (const [options, expected] of invalid) assert.throws(() => resolve(options), expected);
 });
 
-test("effort checks runner syntax and configured model restrictions without inventing support", () => {
+test("effort checks runner syntax without inventing model support", () => {
   assert.throws(() => resolve({ preset: "coding", effort: "max" }), /Invalid effort/);
-  assert.throws(() => resolve({ preset: "coding", effort: "low" }), /configured model effort/);
+  assert.equal(resolve({ preset: "coding", effort: "low" }).effort, "low");
   assert.equal(resolve({ provider: "service", runner: "codex", model: "unlisted", effort: "low" }).effort, "low");
   for (const effort of ["max", "ultra"]) assert.equal(resolve({ runner: "hermes", effort }, {}).effort, effort);
-  const config = sampleConfig();
-  config.models.coding.effort = [];
-  assert.throws(() => resolve({ preset: "coding" }, config), /configured model effort/);
-  assert.equal(resolve({ provider: "service", runner: "codex", model: "actual-model" }, config).effort, null);
+  assert.equal(resolve({ provider: "service", runner: "codex", model: "actual-model" }).effort, null);
 });
 
-test("v1 protocols map explicitly, including legacy wire_api chat", () => {
-  const config = sampleConfig();
-  config.providers.service.wire_api = "chat";
-  assert.equal(resolve({ provider: "service", runner: "hermes", model: "m" }, config).protocol, "openai-chat-completions");
-  assert.throws(() => resolve({ provider: "service", runner: "codex", model: "m" }, config), /compatible protocol/);
+test("providers require concrete protocols and reject removed wire_api mappings", () => {
+  for (const protocol of ["anthropic", "openai"]) {
+    const config = sampleConfig();
+    config.providers.service.protocols = [protocol];
+    assert.ok(validateConfig(config).some(error => /Unknown protocol/.test(error)));
+    assert.throws(() => resolve({ provider: "service", runner: "codex", model: "m" }, config), /Unknown protocol/);
+  }
+  for (const wire_api of ["responses", "chat", "chat-completions"]) {
+    const config = sampleConfig();
+    config.providers.service.wire_api = wire_api;
+    assert.throws(() => resolve({ preset: "coding" }, config), /Unsupported provider field wire_api/);
+  }
 });
 
 test("validation reports malformed structures, reserved providers and invalid presets", () => {
   assert.deepEqual(validateConfig(sampleConfig()), []);
   assert.deepEqual(validateConfig({}), []);
-  const invalid = [null, [], { providers: [] }, { models: 1 }, { presets: null }, { defaultRunner: "unknown" }];
+  const invalid = [null, [], { version: 1 }, { providers: [] }, { models: {} }, { presets: null }, { defaultRunner: "unknown" }];
   for (const config of invalid) assert.ok(validateConfig(config).length);
   for (const mutate of [
     (c) => { c.providers["codex-native"] = c.providers.service; },
     (c) => { c.providers.service.authMode = "native"; },
     (c) => { c.providers.service.protocols = ["imaginary"]; },
     (c) => { c.providers.service.wire_api = "unknown"; },
-    (c) => { c.models.coding.effort = ["imaginary"]; },
-    (c) => { c.providers.service.base_url.openai = "not-a-url"; },
-    (c) => { c.models.coding.provider = "missing"; },
-    (c) => { c.models.coding.clients = ["unknown"]; },
-    (c) => { c.models.coding.effort = "high"; },
+    (c) => { c.providers.service.base_url["openai-responses"] = "not-a-url"; },
+    (c) => { c.presets.coding.provider = "missing"; },
+    (c) => { c.presets.coding.runner = "unknown"; },
+    (c) => { c.presets.coding.effort = ["high"]; },
     (c) => { c.presets.coding.runner = "hermes"; },
     (c) => { c.presets.coding.effort = "max"; },
   ]) {
@@ -215,7 +214,6 @@ test("Claude and Hermes reject unauthenticated routes while Codex permits them",
   const config = sampleConfig();
   delete config.providers.service.api_key;
   config.providers.service.auth = { type: "none" };
-  config.models = {};
   assert.deepEqual(validateConfig(config), []);
   const binding = resolve({ preset: "coding" }, config);
   assert.equal(binding.authMode, "none");
@@ -256,7 +254,6 @@ test("resume pins provider, model, runner and protocol while refreshing keys", (
   const config = sampleConfig();
   const saved = publicBinding(resolve({ preset: "coding" }, config));
   config.presets.coding = { provider: "chat", runner: "hermes", model: "redirected" };
-  config.models.coding = { provider: "chat", model_id: "redirected", clients: ["hermes"] };
   config.defaultRunner = "hermes";
   config.providers.service.api_key = "new-key";
   const restored = restoreBinding(saved, { config });
@@ -268,9 +265,9 @@ test("resume pins provider, model, runner and protocol while refreshing keys", (
 test("resume refuses endpoint, authentication, protocol and provider changes", () => {
   const saved = publicBinding(resolve({ preset: "coding" }));
   for (const mutate of [
-    (c) => { c.providers.service.base_url.openai = "https://different.example.com/v1"; },
+    (c) => { c.providers.service.base_url["openai-responses"] = "https://different.example.com/v1"; },
     (c) => { delete c.providers.service.api_key; c.providers.service.auth = { type: "none" }; },
-    (c) => { c.providers.service.protocols = ["anthropic"]; },
+    (c) => { c.providers.service.protocols = ["anthropic-messages"]; },
     (c) => { delete c.providers.service; },
   ]) {
     const config = sampleConfig();

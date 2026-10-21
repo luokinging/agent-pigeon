@@ -4,7 +4,7 @@ All integrations invoke the standalone CLI. Install the npm workspace first (see
 
 ## Claude Code
 
-The installable plugin root is `integrations/claude-code`, containing `.claude-plugin/plugin.json`, commands, skills, and a CLI launcher. It deliberately has no SessionEnd hooks. It is named `pigeon-standalone` so it can be distinguished from the retained root legacy plugin.
+The repository's only Claude Code plugin is `pigeon-standalone`. Its installable root is `integrations/claude-code`, containing `.claude-plugin/plugin.json`, commands, skills, and a CLI launcher. It has no SessionEnd hooks.
 
 For a local session:
 
@@ -23,7 +23,7 @@ Then use:
 
 The plugin ships a namespaced `dispatch` skill as well, keeping its name distinct from the `pigeon` command. The command submits `run/resume --background --json`, waits for runner control readiness, and reports both IDs and status (normally `running`, or terminal `completed` for a fast task). Ready means the runner control channel is ready, not merely that the manager started. Startup defaults to 120 seconds (`PIGEON_STARTUP_TIMEOUT_MS` in milliseconds); it does not wait for task completion. Give the submitting Bash call at least the startup timeout plus 30 seconds (150000 ms by default). Startup error JSON preserves top-level `session_id`, `execution_id`, and `status` when an execution was created. By default, immediately after a successful submission returns, use a second Claude Bash call with `run_in_background: true` to run `wait EXECUTION --json`, before ending the host turn. No readiness status polling is needed before the waiter or before steer after `running`. That waiter's completion is what Claude can notify about. Hosts without a background task callback must use status/result instead. This is an instruction-driven host integration; manifest validation alone does not prove a full conversational notification test.
 
-To distribute it through a Claude marketplace, use `integrations/claude-code` as the plugin source directory. The repository's existing root marketplace entry still installs the **legacy** plugin. A cached/copied plugin needs the standalone CLI linked/installed separately or an absolute `PIGEON_CLI` path.
+To distribute it through a Claude marketplace, use `integrations/claude-code` as the plugin source directory. A cached/copied plugin needs the standalone CLI linked/installed separately or an absolute `PIGEON_CLI` path.
 
 ## Hermes
 

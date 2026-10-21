@@ -4,7 +4,7 @@ Pigeon owns task sessions, per-turn executions, controls, and collected history.
 
 This is the development workspace implementation. Validation distinguishes live native-runner tests from mocked explicit-provider tests. A passing provider mock verifies routing and control behavior under simulated responses; it does not establish success against a real third-party endpoint. Live native results apply to the tested local runner/version/model, not every authentication mode or host notification flow. Model names in examples are placeholders.
 
-## Install from a checkout
+## Installation
 
 Requires Node.js **22.13 or later**, npm, and the runner(s) you want to use. The state store uses built-in `node:sqlite`, which is experimental on supported Node 22 releases and may print an experimental warning on stderr. macOS/Linux are the primary process-control targets.
 
@@ -47,7 +47,7 @@ For an endpoint that requires no authentication, the provider syntax is `"auth":
 
 `pigeon capabilities --json` reports each runner's `authentication`, `resume`, `events`, `steer`, `cancel`, `steerMode`, and `limitations`. Its `binary_available` field only checks for an executable on PATH. It does not validate authentication, provider access, Hermes environment discovery, or Gateway readiness. Read limitations alongside the booleans; for example, Hermes lists `managed-worker-unsupported`. These declarations describe adapter support rather than a live health check.
 
-A preset is a named set of options. Explicit arguments override preset fields and the resulting route is validated. `--model` always names the actual backend model ID in the standalone CLI. A legacy `models` alias is not silently reinterpreted as a preset. Effort is optional; an accepted runner effort value does not guarantee that a given model honors it.
+A preset is a named set of options. Explicit arguments override preset fields and the resulting route is validated. `--model` always names the actual backend model ID in the standalone CLI. Effort is optional; an accepted runner effort value does not guarantee that a given model honors it.
 
 | Runner | Explicit provider protocol | Control transport |
 |---|---|---|
@@ -104,17 +104,3 @@ export PIGEON_HERMES_PYTHON=/absolute/path/to/hermes/python
 ```
 
 Explicit values take precedence; missing pieces can still be discovered. An unsupported layout reports `HERMES_RUNTIME_NOT_FOUND` instead of guessing. The bound Hermes scope is passed as `HERMES_HOME`. This does not read a key into command-line arguments or require you to modify your Hermes install. Gateway authentication/session recovery constraints depend on the installed Hermes version.
-
-## Legacy compatibility
-
-The repository root `.claude-plugin`, `commands/`, `skills/`, hooks and `scripts/` remain the legacy plugin. The new plugin lives under `integrations/claude-code` and uses a different name. Its CLI is not the old plugin's script.
-
-```sh
-pigeon legacy list
-pigeon legacy status OLD_JOB_ID
-node /absolute/path/to/agent-pigeon/scripts/pigeon.mjs list
-```
-
-`pigeon legacy` requires a source checkout that contains the original scripts; a standalone packed CLI does not ship that tree. The original plugin/scripts remain the compatibility entry for installed legacy usage. Legacy jobs, old `run-...` sessions, and standalone IDs/storage are distinct; there is no automatic migration of missing historical output. Old `--model` aliases and `/pigeon:run --session` retain their meaning only through legacy entry points. New callers use presets, actual model IDs, and `resume SESSION`.
-
-Legacy hooks may still clean up legacy jobs associated with their host session. The standalone integrations do not load those hooks or apply them to shared tasks.

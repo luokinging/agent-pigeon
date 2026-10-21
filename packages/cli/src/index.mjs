@@ -1,7 +1,5 @@
 #!/usr/bin/env node
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
 import { home, loadConfig, validateConfig, RUNNERS } from "@agent-pigeon/core/config";
 import { Store, compactValue, presentMessage } from "@agent-pigeon/core/store";
 import { launch, control, waitForExecution, inspectExecution, TERMINAL } from "@agent-pigeon/core/runtime";
@@ -20,12 +18,10 @@ pigeon sessions [-n COUNT] [--json]
 pigeon executions [--session ID] [-n COUNT] [--json]
 pigeon capabilities [--json]
 pigeon config validate [--json]
-pigeon legacy <old-command> ...
 
 --model is a real model ID. Use --preset for a named configuration.
 Without --provider or --preset, --runner uses its own authentication/config.
---client is an alias for --runner. Legacy commands retain their old semantics
-only through 'pigeon legacy' or the existing scripts/pigeon.mjs entry point.
+--client is an alias for --runner.
 `;
 const booleanFlags = new Set(["background", "json", "raw", "stdin", "follow", "help"]);
 const valueFlags = new Set(["runner", "client", "provider", "protocol", "model", "effort", "preset", "session", "execution", "after", "n"]);
@@ -124,14 +120,6 @@ function renderMessage(message) {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (!command || ["--help", "-h", "help"].includes(command)) { console.log(HELP); return; }
-  if (command === "legacy") {
-    const script = fileURLToPath(new URL("../../../scripts/pigeon.mjs", import.meta.url));
-    if (!fs.existsSync(script)) throw new Error("Legacy entry point is available in the source checkout; use the old plugin for installed legacy jobs");
-    const result = spawnSync(process.execPath, [script, ...args], { stdio: "inherit" });
-    if (result.error) throw result.error;
-    process.exitCode = result.status ?? 1;
-    return;
-  }
   const { flags, positional, task } = parse(args);
   if (flags.help) { console.log(HELP); return; }
   const json = Boolean(flags.json || flags.raw);

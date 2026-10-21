@@ -9,7 +9,7 @@ Pigeon is an independent CLI. The host invokes it; the selected runner (claude, 
 
 ## Choose a route
 
-Run `pigeon capabilities --json` and `pigeon config validate --json` when necessary. Capability declarations are not live connectivity/model-access tests. `binary_available` checks only PATH, not authentication or Gateway readiness; inspect `authentication`, control booleans, `steerMode`, and `limitations`. Explicit provider `auth.type: none` is currently supported only by Codex; Claude and Hermes reject it. Native runner-managed authentication is a separate mode. Do not assume a provider or model exists. `--preset NAME` selects configured options. `--model ID` means the actual backend model ID, not a legacy model alias. Explicit flags override preset fields and the resulting combination must validate. Without a provider/preset, `--runner RUNNER` uses that runner's own authentication/configuration. Effort is optional; only select a level supported by the actual model and endpoint.
+Run `pigeon capabilities --json` and `pigeon config validate --json` when necessary. Capability declarations are not live connectivity/model-access tests. `binary_available` checks only PATH, not authentication or Gateway readiness; inspect `authentication`, control booleans, `steerMode`, and `limitations`. Explicit provider `auth.type: none` is currently supported only by Codex; Claude and Hermes reject it. Native runner-managed authentication is a separate mode. Do not assume a provider or model exists. `--preset NAME` selects configured options. `--model ID` means the actual backend model ID. Explicit flags override preset fields and the resulting combination must validate. Without a provider/preset, `--runner RUNNER` uses that runner's own authentication/configuration. Effort is optional; only select a level supported by the actual model and endpoint.
 
 ## Submit and keep both IDs
 
@@ -42,8 +42,8 @@ By default, immediately after a successful background run/resume returns, start 
 
 Read the returned status: `running` is ready, while `completed` is already terminal. Submission exit alone does not establish task completion. Never cancel shared tasks merely because a host conversation or observer ends. Only cancel the requested execution.
 
-## CLI location and legacy
+## CLI location
 
 Use pigeon on PATH. Source checkout fallback: `node /absolute/path/to/agent-pigeon/packages/cli/src/index.mjs`. A copied skill contains no runtime and needs a separately installed CLI. Integrations may support PIGEON_CLI as one executable or JS-file path; it is not a shell command string.
 
-PIGEON_HOME selects Pigeon config/state storage (default ~/.pigeon). Use `pigeon legacy ...` or the original scripts/pigeon.mjs only for explicitly requested legacy jobs/aliases; those have different identities, storage, and command semantics. Do not route standalone IDs through legacy hooks or commands.
+PIGEON_HOME selects Pigeon config/state storage (default ~/.pigeon).

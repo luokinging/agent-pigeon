@@ -170,6 +170,18 @@ readline.createInterface({input:process.stdin}).once('line', () => {
   });
 }
 
+test("CLI rejects removed commands and excludes them from help", (t) => {
+  const f = fixture(t);
+  const help = f.run(["--help"]);
+  assert.equal(help.status, 0);
+  assert.doesNotMatch(help.stdout, /legacy|scripts\/pigeon\.mjs/);
+  for (const command of ["legacy", "work", "continue", "list", "config-set", "cleanup"]) {
+    const result = f.run([command, "--json"]);
+    assert.equal(result.status, 1);
+    assert.match(result.data.error.message, /Unknown command/);
+  }
+});
+
 test("CLI rejects unknown options and ambiguous task inputs", (t) => {
   const f = fixture(t);
   for (const args of [
